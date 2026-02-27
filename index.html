@@ -198,7 +198,24 @@ canvas {
   background-color: red;
 }
 
-  </style>
+  
+    :root { --game-scale: 1; }
+
+    /* Canvas zoom (controlled by pinch) */
+    #gameCanvas {
+      transform: scale(var(--game-scale));
+      transform-origin: center center;
+      will-change: transform;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Prevent tap highlight & default gestures on buttons */
+    #touchControls button {
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
+    }
+
+</style>
 </head>
 <body>
   <div id="container">
@@ -289,7 +306,10 @@ canvas {
 
 
 <script>
-  // Prevent iOS double-tap zoom & unwanted gestures during gameplay
+  // iOS: Prevent double‑tap zoom on gameplay UI + block browser pinch zoom
+  // Note: we still allow TWO‑finger pinch, but we intercept it and use it to zoom the GAME (not the page).
+
+  // Prevent iOS double-tap zoom
   let __lastTouchEnd = 0;
   document.addEventListener('touchend', function (e) {
     const now = Date.now();
@@ -299,14 +319,94 @@ canvas {
     __lastTouchEnd = now;
   }, { passive: false });
 
+  // Block Safari gesture zoom (older iOS)
   document.addEventListener('gesturestart', function (e) {
     e.preventDefault();
   }, { passive: false });
-
-  // Also prevent scrolling on touchmove (mobile)
-  document.addEventListener('touchmove', function (e) {
+  document.addEventListener('gesturechange', function (e) {
     e.preventDefault();
   }, { passive: false });
+  document.addEventListener('gestureend', function (e) {
+    e.preventDefault();
+  }, { passive: false });
+
+  // Prevent scrolling while interacting with the game (single touch) + always block page zoom on multi-touch
+  function __isGameTarget(t) {
+    return !!(t && (t.closest && (t.closest('#container') || t.closest('#touchControls') || t.closest('#startScreen') || t.closest('#gameOverScreen'))));
+  }
+
+  document.addEventListener('touchmove', function (e) {
+    // Always stop page zoom / scroll when 2 fingers are used
+    if (e.touches && e.touches.length > 1) {
+      e.preventDefault();
+      return;
+    }
+
+    // Stop scrolling when finger is on game UI (canvas/buttons)
+    if (__isGameTarget(e.target)) {
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  // Extra: Ensure buttons never trigger double-tap zoom
+  document.querySelectorAll('#touchControls button').forEach(btn => {
+    ['touchstart','touchend','touchcancel'].forEach(evt => {
+      btn.addEventListener(evt, (e) => e.preventDefault(), { passive: false });
+    });
+  });
+
+  // === Pinch to zoom the GAME (CSS scale), not the page ===
+  (function () {
+    const canvas = document.getElementById('gameCanvas');
+    if (!canvas) return;
+
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const getDist = (t1, t2) => {
+      const dx = t1.clientX - t2.clientX;
+      const dy = t1.clientY - t2.clientY;
+      return Math.hypot(dx, dy);
+    };
+
+    let pinchStartDist = null;
+    let pinchStartScale = 1;
+    let gameScale = 1;
+
+    function setGameScale(v) {
+      gameScale = clamp(v, 0.75, 1.6);  // adjust limits if you want
+      document.documentElement.style.setProperty('--game-scale', String(gameScale));
+    }
+
+    // Expose for debugging (optional)
+    window.__setGameScale = setGameScale;
+    window.__getGameScale = () => gameScale;
+
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches && e.touches.length === 2) {
+        pinchStartDist = getDist(e.touches[0], e.touches[1]);
+        pinchStartScale = gameScale;
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+      if (e.touches && e.touches.length === 2 && pinchStartDist) {
+        const d = getDist(e.touches[0], e.touches[1]);
+        const factor = d / pinchStartDist;
+        setGameScale(pinchStartScale * factor);
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', (e) => {
+      if (!e.touches || e.touches.length < 2) {
+        pinchStartDist = null;
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchcancel', () => {
+      pinchStartDist = null;
+    }, { passive: false });
+  })();
 </script>
 
 </body>
