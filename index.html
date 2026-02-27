@@ -2,6 +2,9 @@
 <html lang="he">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Iron Dome Game</title>
   <style>
     * {
@@ -16,6 +19,11 @@
       background-color: black;
       overflow: hidden;
       font-family: Arial;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      overscroll-behavior: none;
     }
 
   /* עיצוב הכפתור של הסיבוב לאייפון */
@@ -35,18 +43,22 @@
   }
 
     #container {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     }
 
 canvas {
   display: block;
   width: 100vw;
-  height: auto;
-  max-width: 1280px;
-  max-height: 720px;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  object-fit: contain;
+  touch-action: none;
 }
 
 
@@ -127,7 +139,9 @@ canvas {
 
     #touchControls {
       position: absolute;
-      bottom: 200px;
+      bottom: 0;
+      padding-bottom: env(safe-area-inset-bottom);
+
       left: 0;
       right: 0;
       z-index: 15;
@@ -163,21 +177,10 @@ canvas {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+  touch-action: none;
 }
 
-#touchControls button {
-  width: 90px;
-  height: 90px;
-  font-size: 36px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.3);
-  box-shadow: none;
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-}
+
 
 #resetScoresBtn {
   padding: 6px 14px;
@@ -204,7 +207,8 @@ canvas {
 
 <div id="startScreen">
   <!-- הודעה שמופיעה באייפון -->
-  <div id="rotateNotice">📱 Please rotate your device to landscape mode<br>📱 נא לסובב את המסך לרוחב כדי לשחק</div>
+  <div id="rotateNotice">📱 Please rotate to landscape to play<br>📌 For best fullscreen: Add to Home Screen
+<br>📱 נא לסובב את המסך לרוחב כדי לשחק<br>📌 למסך מלא הכי טוב: הוסף למסך הבית</div>
 
   <div id="gameTitle">IRON DOME</div>
   <input type="text" id="playerNameInput" placeholder="Enter your name" />
@@ -270,22 +274,6 @@ canvas {
 
 
 <script>
-  // בדיקה אם המשתמש באייפון או אייפד
-  const isIphone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-  if (isIphone) {
-    const notice = document.getElementById("rotateNotice");
-    notice.style.display = "block"; // מציג את ההודעה
-
-    // מסתיר את ההודעה אחרי 5 שניות
-    setTimeout(() => {
-      notice.style.display = "none";
-    }, 5000);
-  }
-</script>
-
-
- <script>
   document.getElementById("resetScoresBtn").addEventListener("click", () => {
     if (confirm("האם אתה בטוח שברצונך לאפס את טבלת השיאים?")) {
       // מוחק את כל השיאים מה־localStorage
@@ -298,6 +286,28 @@ canvas {
   });
 </script>
 
+
+
+<script>
+  // Prevent iOS double-tap zoom & unwanted gestures during gameplay
+  let __lastTouchEnd = 0;
+  document.addEventListener('touchend', function (e) {
+    const now = Date.now();
+    if (now - __lastTouchEnd <= 300) {
+      e.preventDefault();
+    }
+    __lastTouchEnd = now;
+  }, { passive: false });
+
+  document.addEventListener('gesturestart', function (e) {
+    e.preventDefault();
+  }, { passive: false });
+
+  // Also prevent scrolling on touchmove (mobile)
+  document.addEventListener('touchmove', function (e) {
+    e.preventDefault();
+  }, { passive: false });
+</script>
 
 </body>
 </html>

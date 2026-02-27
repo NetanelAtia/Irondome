@@ -1124,7 +1124,9 @@ document.addEventListener("keydown", (e) => {
     return; // מבטל קפיצה מיותרת
   }
 
-document.addEventListener("keydown", (e) => {
+
+
+  // Debug / cheat: F4 adds score (desktop)
   if (e.code === "F4") {
     score += 5000;
 
@@ -1136,10 +1138,8 @@ document.addEventListener("keydown", (e) => {
     });
 
     console.log("F4 נלחץ – ניקוד עלה ב־5000!");
+    return;
   }
-});
-
-
 // אם במסך הפתיחה – Enter מתחיל את המשחק
 if (e.code === "Enter" && document.getElementById("startScreen").style.display !== "none") {
   startGame();
@@ -1371,21 +1371,33 @@ playerName = formattedName;
     const fireBtn = document.getElementById("fireBtn");
     const rocketBtn = document.getElementById("rocketBtn");
 
-    leftBtn.addEventListener("touchstart", () => isMovingLeft = true);
-    leftBtn.addEventListener("touchend", () => isMovingLeft = false);
+    const prevent = (e) => {
+      // חשוב באייפון: מונע double-tap zoom / scroll
+      e.preventDefault();
+      e.stopPropagation();
+    };
 
-    rightBtn.addEventListener("touchstart", () => isMovingRight = true);
-    rightBtn.addEventListener("touchend", () => isMovingRight = false);
+    const on = (el, type, handler) => el.addEventListener(type, handler, { passive: false });
 
-  upBtn.addEventListener("touchstart", () => {
-  if (!isJumping) {
-      velocityY = isIphone ? -9 : isAndroid ? -9 : -8;
-    isJumping = true;
-  }
-});
+    const bindHold = (el, onDown, onUp) => {
+      on(el, "touchstart", (e) => { prevent(e); onDown(); });
+      on(el, "touchend", (e) => { prevent(e); onUp(); });
+      on(el, "touchcancel", (e) => { prevent(e); onUp(); });
+    };
 
+    bindHold(leftBtn, () => (isMovingLeft = true), () => (isMovingLeft = false));
+    bindHold(rightBtn, () => (isMovingRight = true), () => (isMovingRight = false));
 
-    fireBtn.addEventListener("touchstart", () => {
+    on(upBtn, "touchstart", (e) => {
+      prevent(e);
+      if (!isJumping) {
+        velocityY = isIphone ? -9 : isAndroid ? -9 : -8;
+        isJumping = true;
+      }
+    });
+
+    on(fireBtn, "touchstart", (e) => {
+      prevent(e);
       const vx = facingRight ? bulletSpeed : -bulletSpeed;
       const offsetX = facingRight ? 80 : 0;
       playerBullets.push({ x: playerX + offsetX, y: playerY + 65, vx });
@@ -1394,7 +1406,8 @@ playerName = formattedName;
       shootSound.play();
     });
 
-    rocketBtn.addEventListener("touchstart", () => {
+    on(rocketBtn, "touchstart", (e) => {
+      prevent(e);
       if (Math.abs(playerX - pcX) < 150 && ironDomeAmmo > 0) {
         let target = null;
         const unassignedMissiles = balisticMissiles.filter(m => !m.assigned);
