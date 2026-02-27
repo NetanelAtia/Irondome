@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+  <meta charset="UTF-8">
+  <title>Iron Dome Game</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background-color: black;
+      overflow: hidden;
+      font-family: Arial;
+    }
+
+  /* עיצוב הכפתור של הסיבוב לאייפון */
+  #rotateNotice {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.85);
+    color: white;
+    padding: 12px 20px;
+    font-size: 18px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px black;
+    z-index: 9999;
+    display: none;
+  }
+
+    #container {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+canvas {
+  display: block;
+  width: 100vw;
+  height: auto;
+  max-width: 1280px;
+  max-height: 720px;
+}
+
+
+
+    #startScreen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.7);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      color: white;
+    }
+
+
+    
+    #gameTitle {
+      font-size: 36px;
+      margin-bottom: 20px;
+    }
+
+    #playerNameInput {
+      padding: 10px;
+      font-size: 18px;
+      margin-bottom: 10px;
+    }
+
+    #startButton {
+      padding: 10px 20px;
+      font-size: 18px;
+      background-color: orange;
+      color: black;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      margin-bottom: 20px;
+    }
+
+    #highScoresTitle {
+      font-size: 20px;
+      margin-top: 20px;
+      margin-bottom: 10px;
+    }
+
+    #scoresList {
+      list-style: none;
+      color: white;
+      padding: 0;
+      text-align: center;
+    }
+
+    #scoresList li {
+      font-size: 18px;
+      margin-bottom: 5px;
+    }
+
+    #fullscreenBtn {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      padding: 12px 20px;
+      font-size: 18px;
+      background: orange;
+      color: black;
+      border: none;
+      border-radius: 10px;
+      box-shadow: 0 0 10px black;
+      cursor: pointer;
+      display: none;
+    }
+
+    #touchControls {
+      position: absolute;
+      bottom: 200px;
+      left: 0;
+      right: 0;
+      z-index: 15;
+      display: none;
+      pointer-events: none;
+    }
+
+    #leftControls, #rightControls {
+      position: absolute;
+      bottom: 0;
+      display: flex;
+      gap: 10px;
+      pointer-events: auto;
+    }
+
+    #leftControls {
+      left: 20px;
+    }
+
+    #rightControls {
+      right: 20px;
+    }
+
+#touchControls button {
+  width: 90px;
+  height: 90px;
+  font-size: 36px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  box-shadow: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+#touchControls button {
+  width: 90px;
+  height: 90px;
+  font-size: 36px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  box-shadow: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+#resetScoresBtn {
+  padding: 6px 14px;
+  font-size: 14px;
+  background-color: darkred;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-bottom: 10px;
+  transition: background-color 0.2s ease;
+}
+
+#resetScoresBtn:hover {
+  background-color: red;
+}
+
+  </style>
+</head>
+<body>
+  <div id="container">
+    <canvas id="gameCanvas" width="1280" height="720"></canvas>
+
+
+<div id="startScreen">
+  <!-- הודעה שמופיעה באייפון -->
+  <div id="rotateNotice">📱 Please rotate your device to landscape mode<br>📱 נא לסובב את המסך לרוחב כדי לשחק</div>
+
+  <div id="gameTitle">IRON DOME</div>
+  <input type="text" id="playerNameInput" placeholder="Enter your name" />
+  <button id="startButton" onclick="startGame()">START GAME</button>
+  <button id="resetScoresBtn">Reset High Scores</button>
+
+
+  <div id="highScoresTitle">High Scores</div>
+  <ul id="scoresList"></ul>
+</div>
+
+
+
+    <!-- כפתור מסך מלא -->
+    <button id="fullscreenBtn">מסך מלא</button>
+
+    <!-- כפתורי טאץ' לטלפון -->
+    <div id="touchControls">
+      <div id="leftControls">
+        <button id="fireBtn">🔫</button>
+        <button id="rocketBtn">🚀</button>
+      </div>
+      <div id="rightControls">
+  <button id="leftBtn">⬅️</button>
+  <button id="upBtn">⬆️</button>
+  <button id="rightBtn">➡️</button>
+</div>
+
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+
+<script>
+  window.addEventListener("DOMContentLoaded", () => {
+    const scores = JSON.parse(localStorage.getItem("highScores") || "[]");
+    const scoresList = document.getElementById("scoresList");
+
+    scoresList.innerHTML = "";
+    scores.forEach((entry, index) => {
+      const li = document.createElement("li");
+      li.textContent = `${index + 1}. ${entry.name} - ${entry.score}`;
+      scoresList.appendChild(li);
+    });
+  });
+</script>
+
+
+<script>
+  window.addEventListener("DOMContentLoaded", () => {
+    const isIphone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isIphone) {
+      const notice = document.getElementById("rotateNotice");
+      if (notice) {
+        notice.style.display = "block";
+        setTimeout(() => {
+          notice.style.display = "none";
+        }, 5000);
+      }
+    }
+  });
+</script>
+
+
+<script>
+  // בדיקה אם המשתמש באייפון או אייפד
+  const isIphone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  if (isIphone) {
+    const notice = document.getElementById("rotateNotice");
+    notice.style.display = "block"; // מציג את ההודעה
+
+    // מסתיר את ההודעה אחרי 5 שניות
+    setTimeout(() => {
+      notice.style.display = "none";
+    }, 5000);
+  }
+</script>
+
+
+ <script>
+  document.getElementById("resetScoresBtn").addEventListener("click", () => {
+    if (confirm("האם אתה בטוח שברצונך לאפס את טבלת השיאים?")) {
+      // מוחק את כל השיאים מה־localStorage
+      localStorage.removeItem("highScores");
+
+      // מרוקן את הרשימה שמוצגת במסך הפתיחה
+      const scoresList = document.getElementById("scoresList");
+      scoresList.innerHTML = "";
+    }
+  });
+</script>
+
+
+</body>
+</html>
