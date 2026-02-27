@@ -215,6 +215,22 @@ canvas {
       touch-action: none;
     }
 
+
+/* === Mobile Control Position Improvements === */
+@media (max-width: 900px){
+
+  /* Raise all touch controls higher on iPhone */
+  #touchControls{
+    bottom: calc(env(safe-area-inset-bottom) + 120px) !important;
+  }
+
+  /* Make jump button higher than side movement buttons */
+  #jumpBtn{
+    transform: translateY(-35px);
+  }
+
+}
+
 </style>
 </head>
 <body>
