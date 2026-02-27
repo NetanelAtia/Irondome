@@ -216,17 +216,44 @@ canvas {
     }
 
 
-/* === Mobile Control Position Improvements === */
+
+
+
+/* === Mobile Controls Layout Fix v4 === */
 @media (max-width: 900px){
 
-  /* Raise all touch controls higher on iPhone */
   #touchControls{
-    bottom: calc(env(safe-area-inset-bottom) + 120px) !important;
+    position: fixed;
+    bottom: 180px;
+    left: 0;
+    right: 0;
+    width: 100%;
+    pointer-events: none;
   }
 
-  /* Make jump button higher than side movement buttons */
+  #moveControls,
+  #shootControls{
+    pointer-events: auto;
+  }
+
+  #moveControls{
+    position: absolute;
+    right: 30px;
+    bottom: 0;
+    display: flex;
+    gap: 20px;
+  }
+
+  #shootControls{
+    position: absolute;
+    left: 30px;
+    bottom: 0;
+  }
+
   #jumpBtn{
-    transform: translateY(-35px);
+    position: absolute;
+    right: 30px;
+    bottom: 85px;
   }
 
 }
