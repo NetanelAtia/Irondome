@@ -67,11 +67,6 @@ let highScores = [];
 let __scoreSubmitted = false;
 let __finalScore = null;
 
-function __resetScoreSubmission() {
-  __scoreSubmitted = false;
-  __finalScore = null;
-}
-
 // ===== High Scores (Firebase Realtime DB with local fallback) =====
 const HS_PATH = (window.HS_PATH || "highScores");
 
@@ -1341,8 +1336,9 @@ function handleCanvasClick(e) {
       lastBossScore = -5000;
 
       gameOver = false;
-      gameWon = false;
-      __resetScoreSubmission();
+	      // חשוב: לאפשר שמירת שיא גם אחרי Restart
+	      __scoreSubmitted = false;
+	      __finalScore = null;
     }
   }
 }
@@ -1358,10 +1354,6 @@ canvas.addEventListener("touchstart", handleCanvasClick, { passive: false });
 function startGame() {
   isGameRunning = true;
 
-
-  // Reset per-run submission flags so each new game can save a score
-  __resetScoreSubmission();
-  gameWon = false;
   const input = document.getElementById("playerNameInput");
   const name = input.value.trim();
 
@@ -1386,6 +1378,11 @@ if (isIphone) {
 // שמירת שם השחקן עם אות ראשונה גדולה
 const formattedName = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
 playerName = formattedName;
+
+	// חשוב: מאפסים את הדגל כדי שנוכל לשמור שיא *בכל* משחק מחדש
+	// בלי זה, אחרי משחק אחד __scoreSubmitted נשאר true ולכן משחקים הבאים לא נשמרים ל-DB.
+	__scoreSubmitted = false;
+	__finalScore = null;
 
 
   // בדיקה אם זה טלפון נייד
