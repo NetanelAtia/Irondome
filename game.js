@@ -67,22 +67,13 @@ let highScores = [];
 
 let __scoreSubmitted = false;
 let __finalScore = null;
-let __lastSavedSig = null;
 
 // ===== High Scores (Firebase Realtime DB with local fallback) =====
-const HS_PATH = (window.HS_PATH || "highScores");
+const HS_PATH = (window.HS_PATH || "highScores");;
 
 function __loadHighScoresFallback() {
-  try {
-    const scores = []|| "[]");
-    if (Array.isArray(scores)) {
-      highScores = scores;
-      highScores.sort((a, b) => (b.score || 0) - (a.score || 0));
-      highScores = highScores.slice(0, 10);
-    }
-  } catch (e) {
-    highScores = [];
-  }
+  // Firebase-only mode: no local fallback
+  highScores = [];
 }
 
 function __syncHighScoresFromFirebase() {
@@ -232,6 +223,11 @@ let flagAnimIndex = 0;
 
 function gameLoop() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // ✅ Safety: reset score-submission lock only during an active run
+  if (isGameRunning && !gameOver && (__scoreSubmitted || __finalScore !== null)) {
+    __scoreSubmitted = false;
+    __finalScore = null;
+  }
 
   if (document.getElementById("startScreen").style.display !== "none") {
     ctx.drawImage(backgroundImg, 0, 0, canvas.width, canvas.height);
@@ -280,20 +276,11 @@ ctx.drawImage(ironDomeImg, ironDomeX, ironDomeY, 140, 160);
 if (gameOver) {
   // Lock final score the moment the game ends so UI + DB always match
   if (!__scoreSubmitted) {
-    // Lock final score the moment the game ends so UI + DB always match
+    __scoreSubmitted = true;
     __finalScore = Math.round(Number(score || 0));
-    const __sig = `${playerName}|${__finalScore}`;
-
     // Freeze the score used everywhere after game end
     score = __finalScore;
-
-    // ✅ Prevent accidental double-save of the exact same result
-    if (__lastSavedSig !== __sig) {
-      __lastSavedSig = __sig;
-      try { saveHighScore(playerName, __finalScore); } catch (e) { console.error("saveHighScore failed:", e); }
-    }
-
-    __scoreSubmitted = true;
+    try { saveHighScore(playerName, __finalScore); } catch (e) { console.error("saveHighScore failed:", e); }
   } else if (typeof __finalScore === "number") {
     // Keep score stable on subsequent frames
     score = __finalScore;
@@ -1367,7 +1354,6 @@ function handleCanvasClick(e) {
       // ✅ חשוב: לאפשר שמירה מחדש של שיאים בכל משחק חדש
       __scoreSubmitted = false;
       __finalScore = null;
-      __lastSavedSig = null;
 
       // (מומלץ) כדי למנוע מצב שהמשחק נשאר "ניצחון" או "עצור" מהסיבוב הקודם
       gameWon = false;
@@ -1445,7 +1431,6 @@ playerName = formattedName;
     // ✅ New run: allow score submission again
   __scoreSubmitted = false;
   __finalScore = null;
-  __lastSavedSig = null;
   
 // הסתרת מסך הפתיחה
   document.getElementById("startScreen").style.display = "none";
