@@ -333,7 +333,7 @@ canvas {
       // Expose globally for game.js
       try {
         window.database = firebase.database();
-        window.HS_PATH = "highScoresByPlayer";
+        window.HS_PATH = "highScores";
       } catch (e) {
         console.error("Firebase database init failed:", e);
       }
@@ -357,7 +357,7 @@ canvas {
 
 
 <script>
-  // Render High Scores (Firebase-only)
+  // Render High Scores (global via Firebase). Fallback to localStorage if Firebase not available.
   window.addEventListener("DOMContentLoaded", () => {
     const scoresList = document.getElementById("scoresList");
 
@@ -365,26 +365,26 @@ canvas {
       scoresList.innerHTML = "";
       (list || []).forEach((entry, index) => {
         const li = document.createElement("li");
-        li.textContent = `${index + 1}. ${entry.name} - ${(entry.bestScore ?? entry.score)}`;
+        li.textContent = `${index + 1}. ${entry.name} - ${entry.score}`;
         scoresList.appendChild(li);
       });
     }
 
+    // If Firebase is connected, listen live
     if (window.database) {
-      window.database.ref(window.HS_PATH || "highScoresByPlayer")
-        .orderByChild("bestScore")
+      window.database.ref(window.HS_PATH || "highScores")
         .limitToLast(10)
         .on("value", (snapshot) => {
           const list = [];
           snapshot.forEach((child) => list.push(child.val()));
-          list.sort((a, b) => (b.bestScore || 0) - (a.bestScore || 0) || (b.updatedAt || 0) - (a.updatedAt || 0));
+          list.sort((a, b) => (b.score || 0) - (a.score || 0));
           render(list.slice(0, 10));
-        }, (err) => {
-          console.error("HighScores listener error:", err);
-          render([]);
         });
     } else {
-      render([]);
+      // Fallback
+      const scores = JSON.parse(localStorage.getItem("highScores") || "[]");
+      scores.sort((a, b) => (b.score || 0) - (a.score || 0));
+      render(scores.slice(0, 10));
     }
   });
 </script>
@@ -415,7 +415,7 @@ canvas {
 
     // Prefer Firebase (global reset for everyone)
     if (window.database) {
-      window.database.ref(window.HS_PATH || "highScoresByPlayer").remove()
+      window.database.ref(window.HS_PATH || "highScores").remove()
         .catch((err) => console.error("Failed to reset scores:", err));
     } else {
       // Fallback local reset

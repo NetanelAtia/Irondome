@@ -3,49 +3,6 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-
-function roundRect(ctx, x, y, w, h, r) {
-  const radius = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + w, y, x + w, y + h, radius);
-  ctx.arcTo(x + w, y + h, x, y + h, radius);
-  ctx.arcTo(x, y + h, x, y, radius);
-  ctx.arcTo(x, y, x + w, y, radius);
-  ctx.closePath();
-}
-
-function drawUIButton(ctx, btn, label, style) {
-  const radius = style?.radius ?? 10;
-
-  // shadow
-  ctx.save();
-  ctx.shadowColor = "rgba(0,0,0,0.35)";
-  ctx.shadowBlur = 10;
-  ctx.shadowOffsetY = 4;
-
-  // background
-  ctx.fillStyle = style?.bg ?? "#4b5563"; // slate
-  roundRect(ctx, btn.x, btn.y, btn.width, btn.height, radius);
-  ctx.fill();
-
-  // border
-  ctx.shadowColor = "transparent";
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = style?.border ?? "rgba(255,255,255,0.18)";
-  ctx.stroke();
-
-  // text
-  ctx.shadowColor = "transparent";
-  ctx.fillStyle = style?.text ?? "white";
-  ctx.font = style?.font ?? "22px Arial";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label, btn.x + btn.width / 2, btn.y + btn.height / 2 + 1);
-
-  ctx.restore();
-}
-
 let isGameRunning = false; // מציין אם המשחק פעיל
 
 
@@ -107,83 +64,60 @@ const enemyShootSound = new Audio("sound/shoot2.wav");
 let playerName = ""; // שם השחקן שמוזן בהתחלה
 
 let highScores = [];
-
 let __scoreSubmitted = false;
 let __finalScore = null;
 
-// ===== High Scores (Firebase Realtime DB - per player best score, global) =====
-// Stores ONE record per player name (best score). This prevents duplicates and updates correctly for everyone.
-// Path: /highScoresByPlayer/<normalizedName>
-const HS_PATH = (window.HS_PATH || "highScoresByPlayer");
-let __hsListenerAttached = false;
+// ===== High Scores (Firebase Realtime DB with local fallback) =====
+const HS_PATH = (window.HS_PATH || "highScores");
 
-function __normalizePlayerKey(name) {
-  // Firebase RTDB key-safe, stable key per name
-  return String(name || "player")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 32) || "player";
+function __loadHighScoresFallback() {
+  try {
+    const scores = JSON.parse(localStorage.getItem("highScores") || "[]");
+    if (Array.isArray(scores)) {
+      highScores = scores;
+      highScores.sort((a, b) => (b.score || 0) - (a.score || 0));
+      highScores = highScores.slice(0, 10);
+    }
+  } catch (e) {
+    highScores = [];
+  }
 }
 
 function __syncHighScoresFromFirebase() {
-  if (__hsListenerAttached) return;
-  if (!window.database) return;
-
-  __hsListenerAttached = true;
-
-  window.database.ref(HS_PATH)
-    .orderByChild("bestScore")
-    .limitToLast(10)
-    .on("value", (snapshot) => {
-      const list = [];
-      snapshot.forEach((child) => {
-        const v = child.val() || {};
-        list.push({
-          key: child.key,
-          name: v.name || "Player",
-          score: Number(v.bestScore || 0),
-          updatedAt: Number(v.updatedAt || 0)
-        });
-      });
-
-      // Sort descending by score (and updatedAt for stable ordering)
-      list.sort((a, b) => (b.score - a.score) || (b.updatedAt - a.updatedAt));
-      highScores = list.slice(0, 10);
-    }, (err) => {
-      console.error("HighScores listener error:", err);
-    });
+  if (!window.database) {
+    __loadHighScoresFallback();
+    return;
+  }
+  window.database.ref(HS_PATH).limitToLast(10).on("value", (snapshot) => {
+    const list = [];
+    snapshot.forEach((child) => list.push(child.val()));
+    list.sort((a, b) => (b.score || 0) - (a.score || 0));
+    highScores = list.slice(0, 10);
+    // keep local cache as backup
+    try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch(_) {}
+}, (err) => {
+    console.error("HighScores listener error:", err);
+    __loadHighScoresFallback();
+  });
 }
 
 function saveHighScore(name, score) {
   const s = Number(score || 0);
-  if (!Number.isFinite(s) || s <= 0) return Promise.resolve(false);
+  if (!Number.isFinite(s) || s <= 0) return;
+  const entry = { name: String(name || "Player").slice(0, 20), score: Math.round(s), timestamp: Date.now() };
 
-  if (!window.database) {
-    console.warn("Firebase database not available; score not saved globally.");
-    return Promise.resolve(false);
+  // Update local cache immediately (so UI that relies on localStorage still shows something)
+  highScores.push({ name: entry.name, score: entry.score });
+  highScores.sort((a, b) => (b.score || 0) - (a.score || 0));
+  highScores = highScores.slice(0, 10);
+  try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch(_) {}
+
+  // Push to Firebase if available
+  if (window.database) {
+    window.database.ref(HS_PATH).push(entry).catch((err) => {
+      console.error("Failed to save score to Firebase:", err);
+    });
   }
-
-  const displayName = String(name || "Player").trim().slice(0, 20) || "Player";
-  const key = __normalizePlayerKey(displayName);
-  const ref = window.database.ref(HS_PATH).child(key);
-
-  // Atomic "max" update: only overwrite if new score is higher
-  return ref.transaction((curr) => {
-    const prev = curr && Number(curr.bestScore || 0);
-    if (!curr || !Number.isFinite(prev) || s > prev) {
-      return {
-        name: displayName,
-        bestScore: Math.round(s),
-        updatedAt: Date.now()
-      };
-    }
-    return curr; // keep existing best
-  }).then(() => true).catch((err) => {
-    console.error("Failed to save score to Firebase:", err);
-    return false;
-  });
 }
 
 // Start syncing as soon as possible
@@ -243,20 +177,13 @@ let gameWon = false;
 
 let restartButton = {
   x: canvas.width / 2 - 100,
-  y: canvas.height * 0.72,
-  width: 160,
-  height: 44
+  y: canvas.height * 0.7,
+  width: 200,
+  height: 50
 };
 
 
 
-
-let mainMenuButton = {
-  x: canvas.width / 2 + 20,
-  y: canvas.height * 0.72,
-  width: 160,
-  height: 44
-};
 function getRandomBombInterval() {
   return 1500 + Math.random() * 3000; // בין 1.5 ל־4.5 שניות
 }
@@ -283,12 +210,6 @@ let flagAnimIndex = 0;
 
 function gameLoop() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  // ✅ Safety: reset score-submission lock only during an active run
-  if (isGameRunning && !gameOver && (__scoreSubmitted || __finalScore !== null)) {
-    __scoreSubmitted = false;
-    __finalScore = null;
-  }
-
   if (document.getElementById("startScreen").style.display !== "none") {
     ctx.drawImage(backgroundImg, 0, 0, canvas.width, canvas.height);
     requestAnimationFrame(gameLoop);
@@ -370,29 +291,27 @@ ctx.font = "50px Arial"; // במקום 70px
 ctx.fillText("YOU WIN!", canvas.width / 2, startY);
 
 ctx.fillStyle = "white";
-ctx.font = "22px Arial";
+ctx.font = "22px Arial"; // במקום 28px
 
-let lineY = startY + 50;
-const lineStep = 28;
+ctx.fillText(`Score: ${score}`, canvas.width / 2, startY + 50);
+ctx.fillText(`City Damage: ${cityDamage}%`, canvas.width / 2, startY + 80);
+ctx.fillText(`Boss Hits: ${bossHitCount}`, canvas.width / 2, startY + 110);
+ctx.fillText(`Missiles Intercepted: ${interceptedMissiles}`, canvas.width / 2, startY + 140);
+ctx.fillText(`Ground Enemies Killed: ${killedEnemies}`, canvas.width / 2, startY + 170);
 
-ctx.fillText(`Your Name: ${playerName || "Player"}`, canvas.width / 2, lineY); lineY += lineStep;
-ctx.fillText(`Score: ${score}`, canvas.width / 2, lineY); lineY += lineStep;
-ctx.fillText(`City Damage: ${cityDamage}%`, canvas.width / 2, lineY); lineY += lineStep;
-ctx.fillText(`Boss Hits: ${bossHitCount}`, canvas.width / 2, lineY); lineY += lineStep;
-ctx.fillText(`Missiles Intercepted: ${interceptedMissiles}`, canvas.width / 2, lineY); lineY += lineStep;
-ctx.fillText(`Ground Enemies Killed: ${killedEnemies}`, canvas.width / 2, lineY); lineY += (lineStep + 10);
+ctx.font = "20px Arial"; // גם את זה נקטין
+ctx.fillText("🏆 High Scores:", canvas.width / 2, startY + 210);
 
-ctx.font = "20px Arial";
-ctx.fillText("🏆 High Scores:", canvas.width / 2, lineY); lineY += lineStep;
+
  for (let i = 0; i < highScores.length; i++) {
   const entry = highScores[i];
-  ctx.fillText(`${i + 1}. ${entry.name} - ${entry.score}`, canvas.width / 2, lineY + i * 25);
+  ctx.fillText(`${i + 1}. ${entry.name} - ${entry.score}`, canvas.width / 2, startY + 240 + i * 25);
 }
 
 
 
   // כפתור ריסטארט
-restartButton.y = lineY + highScores.length * 25 + 40;
+restartButton.y = startY + 240 + highScores.length * 25 + 40;
   restartButton.x = canvas.width / 2 - restartButton.width / 2;
 
   ctx.fillStyle = "gray";
@@ -402,16 +321,6 @@ restartButton.y = lineY + highScores.length * 25 + 40;
   ctx.font = "28px Arial";
   ctx.fillText("Restart", restartButton.x + restartButton.width / 2, restartButton.y + 33);
 
-// Place Restart + Main Menu buttons side by side and centered
-const gap = 20;
-const totalW = restartButton.width + gap + mainMenuButton.width;
-const startX = canvas.width / 2 - totalW / 2;
-
-restartButton.x = startX;
-mainMenuButton.x = startX + restartButton.width + gap;
-mainMenuButton.y = restartButton.y;
-
-drawUIButton(ctx, mainMenuButton, "Main Menu", { bg: "#374151", border: "rgba(255,255,255,0.18)", font: "20px Arial", radius: 12 });
   ctx.textAlign = "start";
 
   requestAnimationFrame(gameLoop);
@@ -814,6 +723,13 @@ if (bossHealth <= 0) {
   bossActive = false;
   bossIsDying = true;
   bossExplosionTime = Date.now();
+
+  // הוספת השם והניקוד לרשימת השיאים
+  highScores.push({ name: playerName, score: score });
+
+  // מיון מהגבוה לנמוך, שמירה של עד 10 שיאים
+  highScores.sort((a, b) => b.score - a.score);
+  highScores = highScores.slice(0, 10);
   scorePopups.push({
     text: "+1000",
     x: boss.x,
@@ -1365,14 +1281,15 @@ document.addEventListener("keyup", (e) => {
 
 
 function handleCanvasClick(e) {
-  e.preventDefault();
+  e.preventDefault(); // חשוב מאוד
 
-  const rect = canvas.getBoundingClientRect();
+  const rect = canvas.getBoundingClientRect(); // מיקום פיזי של הקנבס
 
   const isTouch = e.type === "touchstart";
   const clientX = isTouch ? e.touches[0].clientX : e.clientX;
   const clientY = isTouch ? e.touches[0].clientY : e.clientY;
 
+  // המרה לקואורדינטות של הקנבס לפי מתיחה
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
 
@@ -1380,121 +1297,52 @@ function handleCanvasClick(e) {
   const my = (clientY - rect.top) * scaleY;
 
   if (gameOver) {
-  const clickedRestart =
-    mx >= restartButton.x &&
-    mx <= restartButton.x + restartButton.width &&
-    my >= restartButton.y &&
-    my <= restartButton.y + restartButton.height;
+    if (
+      mx >= restartButton.x &&
+      mx <= restartButton.x + restartButton.width &&
+      my >= restartButton.y &&
+      my <= restartButton.y + restartButton.height
+    ) {
+      // התחלת המשחק מחדש
+      playerX = 100;
+      playerY = 500;
+      lives = 10;
+      cityDamage = 0;
+      score = 0;
+      interceptedMissiles = 0;
+      killedEnemies = 0;
+      bossHitCount = 0;
+      balisticMissiles = [];
+      explosions = [];
+      groundEnemies = [];
+      enemyBullets = [];
+      playerBullets = [];
+      ironDomeRockets = [];
+      ironDomeAmmo = 20;
+      hearts = [];
+      ammos = [];
+      b2BonusGiven = false;
+      b2Plane = null;
+      b2PlaneFlightCount = 0;
+      b2PlaneIsWaiting = false;
+      b2Missiles = [];
+      nextBonusHitCount = 10 + Math.floor(Math.random() * 6); // 10 עד 15
+      b2BonusFlashVisible = true;
+      b2BonusFlashLastTime = Date.now();
+      b2Bonuses = [];
 
-  const clickedMainMenu = (gameWon &&
-    mx >= mainMenuButton.x &&
-    mx <= mainMenuButton.x + mainMenuButton.width &&
-    my >= mainMenuButton.y &&
-    my <= mainMenuButton.y + mainMenuButton.height);
+      lastBalisticTime = Date.now();
+      enemySpawnTimer = Date.now();
+      gameStartTime = Date.now();
 
-  if (clickedRestart) {
-    // Restart: reset state and continue playing (start screen stays hidden)
-    playerX = 100;
-    playerY = 500;
-    lives = 10;
-    cityDamage = 0;
-    score = 0;
-    interceptedMissiles = 0;
-    killedEnemies = 0;
-    bossHitCount = 0;
-    balisticMissiles = [];
-    explosions = [];
-    groundEnemies = [];
-    enemyBullets = [];
-    playerBullets = [];
-    ironDomeRockets = [];
-    ironDomeAmmo = 20;
-    hearts = [];
-    ammos = [];
-    b2BonusGiven = false;
-    b2Plane = null;
-    b2PlaneFlightCount = 0;
-    b2PlaneIsWaiting = false;
-    b2Missiles = [];
-    nextBonusHitCount = 10 + Math.floor(Math.random() * 6);
-    b2BonusFlashVisible = true;
-    b2BonusFlashLastTime = Date.now();
-    b2Bonuses = [];
+      boss = null;
+      bossActive = false;
+      bossHealth = 30;
+      lastBossScore = -5000;
 
-    lastBalisticTime = Date.now();
-    enemySpawnTimer = Date.now();
-    gameStartTime = Date.now();
-
-    boss = null;
-    bossActive = false;
-    bossHealth = 30;
-    lastBossScore = -5000;
-
-    // Allow score submission again for the new run
-    __scoreSubmitted = false;
-    __finalScore = null;
-
-    gameWon = false;
-    paused = false;
-    gameOver = false;
-    return;
+      gameOver = false;
+    }
   }
-
-  if (clickedMainMenu) {
-    // Back to main menu: reset state and show start screen
-    playerX = 100;
-    playerY = 500;
-    lives = 10;
-    cityDamage = 0;
-    score = 0;
-    interceptedMissiles = 0;
-    killedEnemies = 0;
-    bossHitCount = 0;
-    balisticMissiles = [];
-    explosions = [];
-    groundEnemies = [];
-    enemyBullets = [];
-    playerBullets = [];
-    ironDomeRockets = [];
-    ironDomeAmmo = 20;
-    hearts = [];
-    ammos = [];
-    b2Bonuses = [];
-    b2BonusGiven = false;
-    b2Plane = null;
-    b2PlaneFlightCount = 0;
-    b2PlaneIsWaiting = false;
-    b2Missiles = [];
-    nextBonusHitCount = 10 + Math.floor(Math.random() * 6);
-    b2BonusFlashVisible = true;
-    b2BonusFlashLastTime = Date.now();
-
-    lastBalisticTime = Date.now();
-    enemySpawnTimer = Date.now();
-    gameStartTime = Date.now();
-
-    boss = null;
-    bossActive = false;
-    bossHealth = 30;
-    lastBossScore = -5000;
-
-    __scoreSubmitted = false;
-    __finalScore = null;
-
-    isGameRunning = false;
-    paused = false;
-    gameWon = false;
-    gameOver = false;
-
-    // Hide mobile controls and show start screen again
-    const sc = document.getElementById("startScreen");
-    if (sc) sc.style.display = "flex";
-    const tc = document.getElementById("touchControls");
-    if (tc) tc.style.display = "none";
-    return;
-  }
-}
-
 }
 
 
@@ -1561,11 +1409,7 @@ playerName = formattedName;
     }
   }
 
-    // ✅ New run: allow score submission again
-  __scoreSubmitted = false;
-  __finalScore = null;
-  
-// הסתרת מסך הפתיחה
+  // הסתרת מסך הפתיחה
   document.getElementById("startScreen").style.display = "none";
 
   // התחלת שעון המשחק
