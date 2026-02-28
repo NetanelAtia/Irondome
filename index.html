@@ -357,9 +357,25 @@ canvas {
 
 
 <script>
-  // Render High Scores (global via Firebase). Fallback to localStorage if Firebase not available.
+  // Render High Scores (Firebase + localStorage merge, deduped)
   window.addEventListener("DOMContentLoaded", () => {
     const scoresList = document.getElementById("scoresList");
+
+    const keyOf = (e) => {
+      const name = (e && e.name) ? String(e.name) : "Player";
+      const score = Number(e && e.score) || 0;
+      const ts = Number(e && e.timestamp) || 0;
+      return `${name}|${score}|${ts}`;
+    };
+
+    function readLocal() {
+      try {
+        const arr = JSON.parse(localStorage.getItem("highScores") || "[]");
+        return Array.isArray(arr) ? arr : [];
+      } catch (_) {
+        return [];
+      }
+    }
 
     function render(list) {
       scoresList.innerHTML = "";
@@ -370,7 +386,33 @@ canvas {
       });
     }
 
-    // If Firebase is connected, listen live
+    function mergeAndRender(firebaseList) {
+      const localList = readLocal();
+
+      // Merge + dedupe (keeps newest timestamp if same name+score)
+      const map = new Map();
+      for (const e of [...(firebaseList || []), ...localList]) {
+        if (!e) continue;
+        const name = String(e.name || "Player").slice(0, 20);
+        const score = Math.round(Number(e.score) || 0);
+        const timestamp = Number(e.timestamp) || 0;
+        const k = `${name}|${score}`; // dedupe by name+score (timestamp can differ)
+        const cur = map.get(k);
+        if (!cur || (timestamp && timestamp > (cur.timestamp || 0))) {
+          map.set(k, { name, score, timestamp });
+        }
+      }
+
+      const merged = Array.from(map.values());
+      merged.sort((a, b) => (b.score || 0) - (a.score || 0) || (b.timestamp || 0) - (a.timestamp || 0));
+
+      // Persist merged as local fallback
+      try { localStorage.setItem("highScores", JSON.stringify(merged.slice(0, 10))); } catch(_) {}
+
+      render(merged.slice(0, 10));
+    }
+
+    // If Firebase is connected, listen live, but always merge with localStorage
     if (window.database) {
       window.database.ref(window.HS_PATH || "highScores")
         .orderByChild("score")
@@ -378,14 +420,16 @@ canvas {
         .on("value", (snapshot) => {
           const list = [];
           snapshot.forEach((child) => list.push(child.val()));
-          list.sort((a, b) => (b.score || 0) - (a.score || 0));
-          render(list.slice(0, 10));
+          // list is not guaranteed sorted; we sort in mergeAndRender
+          mergeAndRender(list);
+        }, (err) => {
+          console.error("HighScores listener error:", err);
+          // If Firebase fails, show local
+          mergeAndRender([]);
         });
     } else {
-      // Fallback
-      const scores = JSON.parse(localStorage.getItem("highScores") || "[]");
-      scores.sort((a, b) => (b.score || 0) - (a.score || 0));
-      render(scores.slice(0, 10));
+      // Fallback only
+      mergeAndRender([]);
     }
   });
 </script>
@@ -416,8 +460,8 @@ canvas {
 
     // Prefer Firebase (global reset for everyone)
     if (window.database) {
+      try { localStorage.setItem("highScores", "[]"); } catch(_) {}
       window.database.ref(window.HS_PATH || "highScores").remove()
-        .then(() => { try { localStorage.setItem("highScores", "[]"); } catch(_) {} })
         .catch((err) => console.error("Failed to reset scores:", err));
     } else {
       // Fallback local reset
