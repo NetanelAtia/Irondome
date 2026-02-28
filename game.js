@@ -75,6 +75,9 @@ let __finalScore = null;
 const HS_PATH = (window.HS_PATH || "highScores");
 
 let __hsListenerAttached = false;
+let __hsPoller = null;
+let __hsLastSyncSource = "local";
+let __hsLastSyncAt = 0;
 let __hsLastFirebaseUpdate = 0;
 
 function __setHighScores(list, source = "local") {
@@ -87,7 +90,20 @@ function __setHighScores(list, source = "local") {
 
   if (source === "firebase") {
     __hsLastFirebaseUpdate = Date.now();
+    __hsLastSyncSource = "firebase";
+    __hsLastSyncAt = __hsLastFirebaseUpdate;
+    try { __updateHighScoreStatus(); } catch(_) {}
   }
+}
+
+function __updateHighScoreStatus(extra = "") {
+  const el = document.getElementById("hsStatus");
+  if (!el) return;
+
+  const src = __hsLastSyncSource || "local";
+  const t = __hsLastSyncAt ? new Date(__hsLastSyncAt).toLocaleTimeString() : "—";
+  const mode = __IS_FILE_PROTOCOL ? "LOCAL" : "GLOBAL";
+  el.textContent = `Sync: ${mode} | source: ${src} | at: ${t}${extra ? " | " + extra : ""}`;
 }
 
 function initHighScores() {
@@ -116,6 +132,36 @@ function initHighScores() {
         console.error("HighScores Firebase listener error:", err);
       });
   }
+
+  // ✅ Safety net for iOS/Safari: periodic fetch in case realtime socket listener is flaky
+  if (!__IS_FILE_PROTOCOL && window.database && !__hsPoller) {
+    __hsPoller = setInterval(() => {
+      window.database
+        .ref(HS_PATH)
+        .orderByChild("score")
+        .limitToLast(10)
+        .once("value")
+        .then((snapshot) => {
+          const arr = [];
+          snapshot.forEach((child) => {
+            const v = child.val() || {};
+            arr.push({ name: v.name || "Player", score: Number(v.score || 0), timestamp: v.timestamp || 0 });
+          });
+          arr.sort((a, b) => (b.score || 0) - (a.score || 0));
+          __setHighScores(arr, "firebase");
+          __hsLastSyncSource = "poll";
+          __hsLastSyncAt = Date.now();
+          try { __updateHighScoreStatus("polling"); } catch(_) {}
+        })
+        .catch((e) => {
+          console.warn("HighScores poll failed:", e);
+          __hsLastSyncSource = "error";
+          __hsLastSyncAt = Date.now();
+          try { __updateHighScoreStatus("poll failed"); } catch(_) {}
+        });
+    }, 10000); // every 10s
+  }
+
 }
 
 function __renderMenuHighScoresFromCache() {
