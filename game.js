@@ -1364,20 +1364,31 @@ playerName = formattedName;
   if (isMobile) {
     const container = document.getElementById("container");
 
-    // בקשת מסך מלא
-    if (container.requestFullscreen) {
-      container.requestFullscreen().catch(() => {});
-    } else if (container.webkitRequestFullscreen) {
-      container.webkitRequestFullscreen();
+    // בקשת מסך מלא (iOS יכול לזרוק חריגות/לא לתמוך על אלמנטים שאינם וידאו)
+    try {
+      if (container && typeof container.requestFullscreen === "function") {
+        container.requestFullscreen().catch(() => {});
+      } else if (container && typeof container.webkitRequestFullscreen === "function") {
+        // חלק מגרסאות iOS מחזירות פונקציה שלא באמת עובדת על DIV – לכן עוטפים ב-try/catch
+        container.webkitRequestFullscreen();
+      }
+    } catch (err) {
+      // לא חוסם התחלת משחק אם Fullscreen נכשל
+      console.warn("Fullscreen not available:", err);
     }
 
     // בקשת סיבוב למסך לרוחב (אם אפשר)
-    if (screen.orientation && screen.orientation.lock) {
-      screen.orientation.lock("landscape").catch(() => {});
+    try {
+      if (screen.orientation && typeof screen.orientation.lock === "function") {
+        screen.orientation.lock("landscape").catch(() => {});
+      }
+    } catch (err) {
+      console.warn("Orientation lock not available:", err);
     }
   }
 
   // הסתרת מסך הפתיחה
+
   document.getElementById("startScreen").style.display = "none";
 
   // התחלת שעון המשחק
