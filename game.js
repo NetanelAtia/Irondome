@@ -5,6 +5,10 @@ const ctx = canvas.getContext("2d");
 
 let isGameRunning = false; // מציין אם המשחק פעיל
 
+// ✅ If you open the game as file:// (local file), Firebase won't be reliable.
+// In that case we disable global sync and use localStorage only.
+const __IS_FILE_PROTOCOL = (location && location.protocol === "file:");
+
 
 // === טעינת תמונות ===
 const runImages = [new Image(), new Image()];
@@ -70,6 +74,50 @@ let __finalScore = null;
 // ===== High Scores (Firebase Realtime DB with local fallback) =====
 const HS_PATH = (window.HS_PATH || "highScores");
 
+let __hsListenerAttached = false;
+let __hsLastFirebaseUpdate = 0;
+
+function __setHighScores(list, source = "local") {
+  highScores = Array.isArray(list) ? list.slice() : [];
+  highScores.sort((a, b) => (b.score || 0) - (a.score || 0));
+  highScores = highScores.slice(0, 10);
+
+  try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch (_) {}
+  try { __renderMenuHighScoresFromCache(); } catch (_) {}
+
+  if (source === "firebase") {
+    __hsLastFirebaseUpdate = Date.now();
+  }
+}
+
+function initHighScores() {
+  // 1) show local cache immediately (fast, no flicker)
+  try { initHighScores(); } catch (_) {}
+
+  // 2) attach firebase live listener once (global sync)
+  if (!__IS_FILE_PROTOCOL && window.database && !__hsListenerAttached) {
+    __hsListenerAttached = true;
+
+    // Realtime DB ordering: get top 10 by score using limitToLast then reverse
+    window.database
+      .ref(HS_PATH)
+      .orderByChild("score")
+      .limitToLast(10)
+      .on("value", (snapshot) => {
+        const arr = [];
+        snapshot.forEach((child) => {
+          const v = child.val() || {};
+          arr.push({ name: v.name || "Player", score: Number(v.score || 0), timestamp: v.timestamp || 0 });
+        });
+
+        arr.sort((a, b) => (b.score || 0) - (a.score || 0));
+        __setHighScores(arr, "firebase");
+      }, (err) => {
+        console.error("HighScores Firebase listener error:", err);
+      });
+  }
+}
+
 function __renderMenuHighScoresFromCache() {
   const scoresList = document.getElementById("scoresList");
   if (!scoresList) return;
@@ -89,40 +137,18 @@ function __loadHighScoresFallback() {
   try {
     const scores = JSON.parse(localStorage.getItem("highScores") || "[]");
     if (Array.isArray(scores)) {
-      highScores = scores;
-      highScores.sort((a, b) => (b.score || 0) - (a.score || 0));
-      highScores = highScores.slice(0, 10);
+      __setHighScores(scores, "local");
     } else {
-      highScores = [];
+      __setHighScores([], "local");
     }
   } catch (e) {
-    highScores = [];
+    __setHighScores([], "local");
   }
-
-  // ✅ ensure menu table shows the cached scores immediately
-  try { __renderMenuHighScoresFromCache(); } catch (_) {}
 }
 
 function __syncHighScoresFromFirebase() {
-  if (!window.database) {
-    __loadHighScoresFallback();
-    return;
-  }
-  window.database.ref(HS_PATH).limitToLast(10).on("value", (snapshot) => {
-    const list = [];
-    snapshot.forEach((child) => list.push(child.val()));
-    list.sort((a, b) => (b.score || 0) - (a.score || 0));
-    highScores = list.slice(0, 10);
-    // ✅ refresh menu list
-    try { __loadHighScoresFallback(); } catch(_) {}
-    // keep local cache as backup
-    try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch(_) {}
-  // ✅ Refresh menu table immediately (important when Firebase isn't available)
-  try { __loadHighScoresFallback(); } catch(_) {}
-}, (err) => {
-    console.error("HighScores listener error:", err);
-    __loadHighScoresFallback();
-  });
+  // ✅ kept for compatibility: use unified init (live listener)
+  try { initHighScores(); } catch (_) {}
 }
 
 function saveHighScore(name, score) {
@@ -135,16 +161,13 @@ function saveHighScore(name, score) {
     timestamp: Date.now()
   };
 
-  // ✅ Update local cache immediately (used by the menu table)
-  highScores.push({ name: entry.name, score: entry.score });
-  highScores.sort((a, b) => (b.score || 0) - (a.score || 0));
-  highScores = highScores.slice(0, 10);
+  // ✅ Update local cache immediately (menu table uses it instantly)
+  const next = (Array.isArray(highScores) ? highScores.slice() : []);
+  next.push({ name: entry.name, score: entry.score, timestamp: entry.timestamp });
+  __setHighScores(next, "local");
 
-  try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch (_) {}
-  try { __renderMenuHighScoresFromCache(); } catch (_) {}
-
-  // Push to Firebase if available
-  if (window.database) {
+  // Push to Firebase if available (global)
+  if (!__IS_FILE_PROTOCOL && window.database) {
     window.database.ref(HS_PATH).push(entry).catch((err) => {
       console.error("Failed to save score to Firebase:", err);
     });
@@ -283,7 +306,7 @@ function __goToMainMenu() {
   if (ss) ss.style.display = "flex";
 
   // ✅ Refresh menu high-scores UI
-  try { __loadHighScoresFallback(); } catch(_) {}
+  try { initHighScores(); } catch(_) {}
 }
 
 
@@ -1661,3 +1684,34 @@ inputField.addEventListener("input", () => {
   inputField.value = capitalized;
 });
 
+
+
+// ✅ Reset High Scores button (local + firebase when available)
+(function bindResetHighScores() {
+  const btn = document.getElementById("resetScoresBtn");
+  if (!btn) return;
+
+  const run = async (e) => {
+    if (e) { try { e.preventDefault(); } catch(_) {} try { e.stopPropagation(); } catch(_) {} }
+    const ok = confirm("Are you sure you want to reset High Scores?");
+    if (!ok) return;
+
+    // local reset
+    highScores = [];
+    try { localStorage.removeItem("highScores"); } catch (_) {}
+    try { __renderMenuHighScoresFromCache(); } catch (_) {}
+
+    // firebase reset (only when hosted, not file://)
+    if (!__IS_FILE_PROTOCOL && window.database) {
+      try {
+        await window.database.ref(HS_PATH).remove();
+      } catch (err) {
+        console.error("Failed to reset Firebase high scores:", err);
+        alert("Reset worked locally, but Firebase reset failed (check rules/permissions).");
+      }
+    }
+  };
+
+  btn.addEventListener("click", run);
+  btn.addEventListener("touchend", run, { passive: false });
+})();

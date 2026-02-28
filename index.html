@@ -357,40 +357,6 @@ canvas {
 
 
 <script>
-  // Render High Scores (global via Firebase). Fallback to localStorage if Firebase not available.
-  window.addEventListener("DOMContentLoaded", () => {
-    const scoresList = document.getElementById("scoresList");
-
-    function render(list) {
-      scoresList.innerHTML = "";
-      (list || []).forEach((entry, index) => {
-        const li = document.createElement("li");
-        li.textContent = `${index + 1}. ${entry.name} - ${entry.score}`;
-        scoresList.appendChild(li);
-      });
-    }
-
-    // If Firebase is connected, listen live
-    if (window.database) {
-      window.database.ref(window.HS_PATH || "highScores")
-        .limitToLast(10)
-        .on("value", (snapshot) => {
-          const list = [];
-          snapshot.forEach((child) => list.push(child.val()));
-          list.sort((a, b) => (b.score || 0) - (a.score || 0));
-          render(list.slice(0, 10));
-        });
-    } else {
-      // Fallback
-      const scores = JSON.parse(localStorage.getItem("highScores") || "[]");
-      scores.sort((a, b) => (b.score || 0) - (a.score || 0));
-      render(scores.slice(0, 10));
-    }
-  });
-</script>
-
-
-<script>
   window.addEventListener("DOMContentLoaded", () => {
     const isIphone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
     if (isIphone) {
@@ -528,6 +494,16 @@ canvas {
       pinchStartDist = null;
     }, { passive: false });
   })();
+</script>
+
+
+<script>
+  // ✅ Init High Scores using the game.js unified logic (local cache first, then Firebase if available)
+  window.addEventListener('load', () => {
+    if (typeof window.initHighScores === 'function') {
+      try { window.initHighScores(); } catch (e) { console.warn(e); }
+    }
+  });
 </script>
 
 </body>
