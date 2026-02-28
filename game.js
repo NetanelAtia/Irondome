@@ -70,6 +70,21 @@ let __finalScore = null;
 // ===== High Scores (Firebase Realtime DB with local fallback) =====
 const HS_PATH = (window.HS_PATH || "highScores");
 
+function __renderMenuHighScoresFromCache() {
+  const scoresList = document.getElementById("scoresList");
+  if (!scoresList) return;
+
+  const list = Array.isArray(highScores) ? highScores.slice() : [];
+  list.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+  scoresList.innerHTML = "";
+  list.slice(0, 10).forEach((entry, i) => {
+    const li = document.createElement("li");
+    li.textContent = `${i + 1}. ${entry.name} - ${entry.score}`;
+    scoresList.appendChild(li);
+  });
+}
+
 function __loadHighScoresFallback() {
   try {
     const scores = JSON.parse(localStorage.getItem("highScores") || "[]");
@@ -77,10 +92,15 @@ function __loadHighScoresFallback() {
       highScores = scores;
       highScores.sort((a, b) => (b.score || 0) - (a.score || 0));
       highScores = highScores.slice(0, 10);
+    } else {
+      highScores = [];
     }
   } catch (e) {
     highScores = [];
   }
+
+  // ✅ ensure menu table shows the cached scores immediately
+  try { __renderMenuHighScoresFromCache(); } catch (_) {}
 }
 
 function __syncHighScoresFromFirebase() {
@@ -93,8 +113,12 @@ function __syncHighScoresFromFirebase() {
     snapshot.forEach((child) => list.push(child.val()));
     list.sort((a, b) => (b.score || 0) - (a.score || 0));
     highScores = list.slice(0, 10);
+    // ✅ refresh menu list
+    try { __loadHighScoresFallback(); } catch(_) {}
     // keep local cache as backup
     try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch(_) {}
+  // ✅ Refresh menu table immediately (important when Firebase isn't available)
+  try { __loadHighScoresFallback(); } catch(_) {}
 }, (err) => {
     console.error("HighScores listener error:", err);
     __loadHighScoresFallback();
@@ -104,13 +128,20 @@ function __syncHighScoresFromFirebase() {
 function saveHighScore(name, score) {
   const s = Number(score || 0);
   if (!Number.isFinite(s) || s <= 0) return;
-  const entry = { name: String(name || "Player").slice(0, 20), score: Math.round(s), timestamp: Date.now() };
 
-  // Update local cache immediately (so UI that relies on localStorage still shows something)
+  const entry = {
+    name: String(name || "Player").slice(0, 20),
+    score: Math.round(s),
+    timestamp: Date.now()
+  };
+
+  // ✅ Update local cache immediately (used by the menu table)
   highScores.push({ name: entry.name, score: entry.score });
   highScores.sort((a, b) => (b.score || 0) - (a.score || 0));
   highScores = highScores.slice(0, 10);
-  try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch(_) {}
+
+  try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch (_) {}
+  try { __renderMenuHighScoresFromCache(); } catch (_) {}
 
   // Push to Firebase if available
   if (window.database) {
@@ -250,6 +281,9 @@ function __goToMainMenu() {
 
   const ss = document.getElementById("startScreen");
   if (ss) ss.style.display = "flex";
+
+  // ✅ Refresh menu high-scores UI
+  try { __loadHighScoresFallback(); } catch(_) {}
 }
 
 
