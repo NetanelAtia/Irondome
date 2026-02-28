@@ -64,12 +64,8 @@ const enemyShootSound = new Audio("sound/shoot2.wav");
 let playerName = ""; // שם השחקן שמוזן בהתחלה
 
 let highScores = [];
-let __scoreSubmitted = false; // legacy
-let __finalScore = null; // legacy
-// Robust per-game submission guard (prevents "saves only once" bugs)
-let __gameSessionId = 0;
-let __submittedSessionId = -1;
-function __newGameSession(){ __gameSessionId++; __submittedSessionId = -1; __scoreSubmitted = false; __finalScore = null; }
+let __scoreSubmitted = false;
+let __finalScore = null;
 
 // ===== High Scores (Firebase Realtime DB with local fallback) =====
 const HS_PATH = (window.HS_PATH || "highScores");
@@ -92,7 +88,7 @@ function __syncHighScoresFromFirebase() {
     __loadHighScoresFallback();
     return;
   }
-  window.database.ref(HS_PATH).orderByChild("score").limitToLast(10).on("value", (snapshot) => {
+  window.database.ref(HS_PATH).limitToLast(10).on("value", (snapshot) => {
     const list = [];
     snapshot.forEach((child) => list.push(child.val()));
     list.sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -259,11 +255,16 @@ const nearPC = Math.abs(playerX - pcX) < 150;
 ctx.drawImage(ironDomeImg, ironDomeX, ironDomeY, 140, 160);
 
 if (gameOver) {
-  // Submit high score once per game-session (works for BOTH win & lose)
-  if (__submittedSessionId !== __gameSessionId) {
-    __submittedSessionId = __gameSessionId;
+  // Lock final score the moment the game ends so UI + DB always match
+  if (!__scoreSubmitted) {
+    __scoreSubmitted = true;
     __finalScore = Math.round(Number(score || 0));
+    // Freeze the score used everywhere after game end
+    score = __finalScore;
     try { saveHighScore(playerName, __finalScore); } catch (e) { console.error("saveHighScore failed:", e); }
+  } else if (typeof __finalScore === "number") {
+    // Keep score stable on subsequent frames
+    score = __finalScore;
   }
 
   if (gameWon) {
@@ -1340,8 +1341,6 @@ function handleCanvasClick(e) {
       lastBossScore = -5000;
 
       gameOver = false;
-	      // Restart = סשן משחק חדש (מאפס דגלי שמירת שיא)
-	      __newGameSession();
     }
   }
 }
@@ -1381,10 +1380,6 @@ if (isIphone) {
 // שמירת שם השחקן עם אות ראשונה גדולה
 const formattedName = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
 playerName = formattedName;
-
-	// התחלת סשן משחק חדש (מאפס דגלי שמירת שיא)
-  __newGameSession();
-
 
 
   // בדיקה אם זה טלפון נייד
@@ -1533,37 +1528,3 @@ inputField.addEventListener("input", () => {
   inputField.value = capitalized;
 });
 
-
-
-// ===========================
-// Leaderboard: Reset + UI hooks
-// ===========================
-function resetHighScores() {
-  try {
-    if (!window.database) throw new Error("Firebase database not initialized");
-    return window.database.ref(HS_PATH).remove()
-      .then(() => console.log("[Leaderboard] Reset done"))
-      .catch(err => console.error("[Leaderboard] Reset failed:", err));
-  } catch (e) {
-    console.error("[Leaderboard] Reset error:", e);
-    return Promise.reject(e);
-  }
-}
-
-window.addEventListener("load", () => {
-  // Start button (HTML) -> startGame()
-  const startBtn = document.getElementById("startGameBtn");
-  if (startBtn) startBtn.addEventListener("click", (e) => { e.preventDefault(); startGame(); });
-
-  // Reset scores button
-  const resetBtn = document.getElementById("resetScoresBtn");
-  if (resetBtn) resetBtn.addEventListener("click", (e) => { e.preventDefault(); resetHighScores(); });
-
-  // If we have a name in input, Enter should start
-  const nameInput = document.getElementById("playerNameInput");
-  if (nameInput) {
-    nameInput.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") startGame();
-    });
-  }
-});
