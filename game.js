@@ -64,10 +64,13 @@ const enemyShootSound = new Audio("sound/shoot2.wav");
 let playerName = ""; // שם השחקן שמוזן בהתחלה
 
 let highScores = [];
-let __sessionId = 0;
+let __scoreSubmitted = false; // legacy
+let __finalScore = null; // legacy
+// Robust per-game submission guard (prevents "saves only once" bugs)
+let __gameSessionId = 0;
 let __submittedSessionId = -1;
+function __newGameSession(){ __gameSessionId++; __submittedSessionId = -1; __scoreSubmitted = false; __finalScore = null; }
 
-function __newSession(){ __sessionId++; }
 // ===== High Scores (Firebase Realtime DB with local fallback) =====
 const HS_PATH = (window.HS_PATH || "highScores");
 
@@ -89,7 +92,7 @@ function __syncHighScoresFromFirebase() {
     __loadHighScoresFallback();
     return;
   }
-  window.database.ref(HS_PATH).limitToLast(10).on("value", (snapshot) => {
+  window.database.ref(HS_PATH).orderByChild("score").limitToLast(10).on("value", (snapshot) => {
     const list = [];
     snapshot.forEach((child) => list.push(child.val()));
     list.sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -103,39 +106,22 @@ function __syncHighScoresFromFirebase() {
 }
 
 function saveHighScore(name, score) {
-  const safeName = String(name || "Player").trim().slice(0, 20) || "Player";
   const s = Number(score || 0);
   if (!Number.isFinite(s) || s <= 0) return;
+  const entry = { name: String(name || "Player").slice(0, 20), score: Math.round(s), timestamp: Date.now() };
 
-  // Always update local fallback too (useful if Firebase is blocked)
-  try {
-    const local = JSON.parse(localStorage.getItem("highScores") || "[]");
-    local.push({ name: safeName, score: Math.round(s), ts: Date.now() });
-    local.sort((a,b) => (Number(b.score)||0) - (Number(a.score)||0));
-    localStorage.setItem("highScores", JSON.stringify(local.slice(0, 50)));
-  } catch (_) {}
+  // Update local cache immediately (so UI that relies on localStorage still shows something)
+  highScores.push({ name: entry.name, score: entry.score });
+  highScores.sort((a, b) => (b.score || 0) - (a.score || 0));
+  highScores = highScores.slice(0, 10);
+  try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch(_) {}
 
-  if (!window.database) return;
-
-  // Use a per-player record so newer higher scores overwrite the old one reliably
-  // Key: lowercase letters/numbers/_- (Firebase RTDB key-safe)
-  const key = safeName
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "_")
-    .slice(0, 32) || "player";
-
-  const ref = window.database.ref(`${HS_PATH}/${key}`);
-  const serverTs = (window.firebase && window.firebase.database && window.firebase.database.ServerValue)
-    ? window.firebase.database.ServerValue.TIMESTAMP
-    : Date.now();
-
-  ref.transaction((current) => {
-    const curScore = current && Number(current.score);
-    if (!Number.isFinite(curScore) || Math.round(s) > curScore) {
-      return { name: safeName, score: Math.round(s), ts: serverTs };
-    }
-    return; // abort - keep current
-  }).catch((err) => console.error("Failed to save high score:", err));
+  // Push to Firebase if available
+  if (window.database) {
+    window.database.ref(HS_PATH).push(entry).catch((err) => {
+      console.error("Failed to save score to Firebase:", err);
+    });
+  }
 }
 
 // Start syncing as soon as possible
@@ -273,11 +259,11 @@ const nearPC = Math.abs(playerX - pcX) < 150;
 ctx.drawImage(ironDomeImg, ironDomeX, ironDomeY, 140, 160);
 
 if (gameOver) {
-  // Submit high score once per session (works for BOTH win & lose)
-  if (__submittedSessionId !== __sessionId) {
-    __submittedSessionId = __sessionId;
-    const finalScore = Math.round(Number(score || 0));
-    try { saveHighScore(playerName, finalScore); } catch (e) { console.error("saveHighScore failed:", e); }
+  // Submit high score once per game-session (works for BOTH win & lose)
+  if (__submittedSessionId !== __gameSessionId) {
+    __submittedSessionId = __gameSessionId;
+    __finalScore = Math.round(Number(score || 0));
+    try { saveHighScore(playerName, __finalScore); } catch (e) { console.error("saveHighScore failed:", e); }
   }
 
   if (gameWon) {
@@ -1354,9 +1340,8 @@ function handleCanvasClick(e) {
       lastBossScore = -5000;
 
       gameOver = false;
-	      // חשוב: לאפשר שמירת שיא גם אחרי Restart
-	      __newSession();
-	      __submittedSessionId = -1;
+	      // Restart = סשן משחק חדש (מאפס דגלי שמירת שיא)
+	      __newGameSession();
     }
   }
 }
@@ -1370,9 +1355,6 @@ canvas.addEventListener("touchstart", handleCanvasClick, { passive: false });
 
 
 function startGame() {
-  __newSession();
-  __submittedSessionId = -1;
-
   isGameRunning = true;
 
   const input = document.getElementById("playerNameInput");
@@ -1400,10 +1382,9 @@ if (isIphone) {
 const formattedName = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
 playerName = formattedName;
 
-	// חשוב: מאפסים את הדגל כדי שנוכל לשמור שיא *בכל* משחק מחדש
-	// בלי זה, אחרי משחק אחד __scoreSubmitted נשאר true ולכן משחקים הבאים לא נשמרים ל-DB.
-	__newSession();
-	__submittedSessionId = -1;
+	// התחלת סשן משחק חדש (מאפס דגלי שמירת שיא)
+  __newGameSession();
+
 
 
   // בדיקה אם זה טלפון נייד
@@ -1552,3 +1533,37 @@ inputField.addEventListener("input", () => {
   inputField.value = capitalized;
 });
 
+
+
+// ===========================
+// Leaderboard: Reset + UI hooks
+// ===========================
+function resetHighScores() {
+  try {
+    if (!window.database) throw new Error("Firebase database not initialized");
+    return window.database.ref(HS_PATH).remove()
+      .then(() => console.log("[Leaderboard] Reset done"))
+      .catch(err => console.error("[Leaderboard] Reset failed:", err));
+  } catch (e) {
+    console.error("[Leaderboard] Reset error:", e);
+    return Promise.reject(e);
+  }
+}
+
+window.addEventListener("load", () => {
+  // Start button (HTML) -> startGame()
+  const startBtn = document.getElementById("startGameBtn");
+  if (startBtn) startBtn.addEventListener("click", (e) => { e.preventDefault(); startGame(); });
+
+  // Reset scores button
+  const resetBtn = document.getElementById("resetScoresBtn");
+  if (resetBtn) resetBtn.addEventListener("click", (e) => { e.preventDefault(); resetHighScores(); });
+
+  // If we have a name in input, Enter should start
+  const nameInput = document.getElementById("playerNameInput");
+  if (nameInput) {
+    nameInput.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") startGame();
+    });
+  }
+});
