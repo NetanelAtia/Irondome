@@ -300,12 +300,11 @@ canvas {
     </div>
   </div>
 
-  
   <!-- Firebase (Realtime Database) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script>
-    // Firebase config (Iron-Dome-Game)
+    // Firebase config (Realtime Database)
     const firebaseConfig = {
       apiKey: "AIzaSyC1Tg2Q-1UpWzE1s-jG-ebTrK4GrZaN8cY",
       authDomain: "iron-dome-game-65886.firebaseapp.com",
@@ -319,31 +318,6 @@ canvas {
     firebase.initializeApp(firebaseConfig);
     // Expose globally for game.js
     window.database = firebase.database();
-
-    // Render scores into the start screen list
-    window.renderHighScoresList = function(scores) {
-      const scoresList = document.getElementById("scoresList");
-      if (!scoresList) return;
-      scoresList.innerHTML = "";
-      (scores || []).forEach((entry, index) => {
-        const li = document.createElement("li");
-        li.textContent = `${index + 1}. ${entry.name} - ${entry.score}`;
-        scoresList.appendChild(li);
-      });
-    };
-
-    // Live subscribe (so list updates for everyone)
-    window.addEventListener("DOMContentLoaded", () => {
-      window.database.ref("highScores").limitToLast(50).on("value", (snapshot) => {
-        const list = [];
-        snapshot.forEach(child => {
-          const v = child.val() || {};
-          if (v && typeof v.score === "number") list.push(v);
-        });
-        list.sort((a,b) => (b.score||0) - (a.score||0));
-        window.renderHighScoresList(list.slice(0,10));
-      });
-    });
   </script>
 
   <script src="game.js"></script>
@@ -364,24 +338,6 @@ canvas {
 </script>
 
 
-<script>
-  document.getElementById("resetScoresBtn").addEventListener("click", async () => {
-    if (!confirm("האם אתה בטוח שברצונך לאפס את טבלת השיאים לכולם?")) return;
-
-    try {
-      if (window.database && window.database.ref) {
-        await window.database.ref("highScores").remove();
-      } else {
-        localStorage.removeItem("highScores");
-      }
-      const scoresList = document.getElementById("scoresList");
-      if (scoresList) scoresList.innerHTML = "";
-    } catch (e) {
-      console.error(e);
-      alert("לא הצלחתי לאפס שיאים. בדוק הרשאות ב-Firebase Rules.");
-    }
-  });
-</script>
 <script>
   // iOS: Prevent double‑tap zoom on gameplay UI + block browser pinch zoom
   // Note: we still allow TWO‑finger pinch, but we intercept it and use it to zoom the GAME (not the page).

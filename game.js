@@ -62,7 +62,114 @@ const shootSound = new Audio("sound/shoot.wav");
 const enemyShootSound = new Audio("sound/shoot2.wav");
 
 let playerName = ""; // שם השחקן שמוזן בהתחלה
-let highScores = JSON.parse(localStorage.getItem("highScores") || "[]"); // טעינת שיאים מזיכרון הדפדפן
+let highScores = []; // High Scores are synced from Firebase (fallback to localStorage if Firebase is unavailable)
+// === High Scores (Firebase Realtime Database) ===
+function __renderHighScoresToUI() {
+  const ul = document.getElementById("scoresList");
+  if (!ul) return;
+  ul.innerHTML = "";
+  (highScores || []).slice(0, 10).forEach((entry, index) => {
+    const li = document.createElement("li");
+    li.textContent = `${index + 1}. ${entry.name} - ${entry.score}`;
+    ul.appendChild(li);
+  });
+}
+
+function __syncHighScoresFromFirebase() {
+  try {
+    if (window.database && window.database.ref) {
+      window.database
+        .ref("highScores")
+        .limitToLast(50)
+        .on("value", (snapshot) => {
+          const arr = [];
+          snapshot.forEach((child) => {
+            const v = child.val() || {};
+            if (typeof v.name === "string" && Number.isFinite(Number(v.score))) {
+              arr.push({ name: v.name, score: Number(v.score), timestamp: Number(v.timestamp) || 0 });
+            }
+          });
+          arr.sort((a, b) => b.score - a.score || b.timestamp - a.timestamp);
+          highScores = arr.slice(0, 10);
+          __renderHighScoresToUI();
+        });
+      return true;
+    }
+  } catch (e) {
+    console.warn("Firebase sync failed:", e);
+  }
+  return false;
+}
+
+function __loadHighScoresFallback() {
+  try {
+    const stored = JSON.parse(localStorage.getItem("highScores") || "[]");
+    if (Array.isArray(stored)) {
+      highScores = stored
+        .filter(x => x && typeof x.name === "string" && Number.isFinite(Number(x.score)))
+        .map(x => ({ name: x.name, score: Number(x.score) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+    }
+  } catch {}
+  __renderHighScoresToUI();
+}
+
+function submitHighScore(name, score) {
+  const cleanName = String(name || "").trim().slice(0, 24);
+  const cleanScore = Number(score) || 0;
+  if (!cleanName) return;
+
+  // Prefer Firebase
+  try {
+    if (window.database && window.database.ref) {
+      window.database.ref("highScores").push({
+        name: cleanName,
+        score: cleanScore,
+        timestamp: Date.now()
+      });
+      return;
+    }
+  } catch (e) {
+    console.warn("Firebase write failed:", e);
+  }
+
+  // Fallback local
+  highScores = (highScores || []);
+  highScores.push({ name: cleanName, score: cleanScore });
+  highScores.sort((a, b) => b.score - a.score);
+  highScores = highScores.slice(0, 10);
+  try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch {}
+  __renderHighScoresToUI();
+}
+
+// init on load
+window.addEventListener("DOMContentLoaded", () => {
+  const ok = __syncHighScoresFromFirebase();
+  if (!ok) __loadHighScoresFallback();
+
+  const resetBtn = document.getElementById("resetScoresBtn");
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      if (!confirm("האם אתה בטוח שברצונך לאפס את טבלת השיאים?")) return;
+
+      // Prefer Firebase (global reset)
+      try {
+        if (window.database && window.database.ref) {
+          window.database.ref("highScores").remove();
+          return;
+        }
+      } catch (e) {
+        console.warn("Firebase reset failed:", e);
+      }
+
+      // Fallback local
+      try { localStorage.removeItem("highScores"); } catch {}
+      highScores = [];
+      __renderHighScoresToUI();
+    });
+  }
+});
 const isIphone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 const isAndroid = /Android/i.test(navigator.userAgent);
 const isMobile = isIphone || isAndroid;
@@ -112,8 +219,7 @@ let enemyBullets = [], enemyBulletSpeed = 4;
 let enemyFrameCounter = 0;
 let flagAnimCounter = 0;
 let gameOver = false;
-let gameWon = false;
-
+window.gameWon = window.gameWon ?? false; // global-safe (prevents redeclare if script loaded twice)
 let restartButton = {
   x: canvas.width / 2 - 100,
   y: canvas.height * 0.7,
@@ -194,7 +300,7 @@ const nearPC = Math.abs(playerX - pcX) < 150;
 ctx.drawImage(ironDomeImg, ironDomeX, ironDomeY, 140, 160);
 
 if (gameOver) {
-  if (gameWon) {
+  if (window.gameWon) {
     const timeSinceBossExplosion = Date.now() - bossExplosionTime;
 
     if (timeSinceBossExplosion < 1000) {
@@ -404,11 +510,14 @@ if (bossHealth <= 0) {
   bossExplosionTime = Date.now();
 
   // הוספת השם והניקוד לרשימת השיאים
-  highScores.push({ name: playerName, score: score });
+  submitHighScore(playerName, score);
 
   // מיון השיאים מהגבוה לנמוך ושמירה של 10 שיאים בלבד
   highScores.sort((a, b) => b.score - a.score);
   highScores = highScores.slice(0, 10);
+
+  // שמירת השיאים בזיכרון הדפדפן
+  // high scores saved via submitHighScore() (Firebase)
 scorePopups.push({
   text: "+1000",
   x: boss.x,
@@ -659,11 +768,14 @@ if (bossHealth <= 0) {
   bossExplosionTime = Date.now();
 
   // הוספת השם והניקוד לרשימת השיאים
-  highScores.push({ name: playerName, score: score });
+  submitHighScore(playerName, score);
 
   // מיון מהגבוה לנמוך, שמירה של עד 10 שיאים
   highScores.sort((a, b) => b.score - a.score);
   highScores = highScores.slice(0, 10);
+
+  // שמירה בזיכרון הדפדפן
+  // high scores saved via submitHighScore() (Firebase)
   scorePopups.push({
     text: "+1000",
     x: boss.x,
@@ -752,9 +864,10 @@ if (
 
       score += 1000;
 
-      highScores.push({ name: playerName, score });
+      submitHighScore(playerName, score);
       highScores.sort((a, b) => b.score - a.score);
       highScores = highScores.slice(0, 10);
+  // high scores saved via submitHighScore() (Firebase)
       scorePopups.push({
         text: "+1000",
         x: boss.x,
@@ -928,7 +1041,7 @@ if (bossIsDying && boss) {
 
   if (timeSinceExplosion >= 1000) {
     bossIsDying = false;
-    gameWon = true;
+    window.gameWon = true;
     gameOver = true;
   }
 }
@@ -1097,15 +1210,7 @@ setTimeout(waitAndShootB2Missiles, 1000);
   }
 }
 
-    // Save score once when the run ends (GAME OVER)
-  try {
-    if (typeof gameOver !== "undefined" && gameOver && !__lastGameOver) {
-      __submitHighScoreOnce(score);
-    }
-    __lastGameOver = !!gameOver;
-  } catch(e) { /* ignore */ }
-
-requestAnimationFrame(gameLoop);
+  requestAnimationFrame(gameLoop);
 }
 
 
@@ -1300,9 +1405,7 @@ canvas.addEventListener("touchstart", handleCanvasClick, { passive: false });
 
 
 function startGame() {
-  __highScoreSubmitted = false;
-  __lastGameOver = false;
-isGameRunning = true;
+  isGameRunning = true;
 
   const input = document.getElementById("playerNameInput");
   const name = input.value.trim();
@@ -1336,26 +1439,17 @@ playerName = formattedName;
   if (isMobile) {
     const container = document.getElementById("container");
 
-    // בקשת מסך מלא (אל תקריס את המשחק אם הדפדפן לא תומך / חוסם)
-    try {
-      if (container.requestFullscreen) {
-        container.requestFullscreen().catch(() => {});
-      } else if (container.webkitRequestFullscreen) {
-        container.webkitRequestFullscreen();
-      }
-    } catch (e) {
-      // iOS / Safari לפעמים זורק שגיאה – מתעלמים וממשיכים
+    // בקשת מסך מלא
+    if (container.requestFullscreen) {
+      container.requestFullscreen().catch(() => {});
+    } else if (container.webkitRequestFullscreen) {
+      try { container.webkitRequestFullscreen(); } catch (e) {}
     }
 
-    // בקשת סיבוב למסך לרוחב (אם אפשר) – גם כאן לא להפיל את start
-    try {
-      if (screen.orientation && screen.orientation.lock) {
-        screen.orientation.lock("landscape").catch(() => {});
-      }
-    } catch (e) {
-      // לא נתמך באייפון ברוב המקרים – מתעלמים
+    // בקשת סיבוב למסך לרוחב (אם אפשר)
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock("landscape").catch(() => {});
     }
-  }
   }
 
   // הסתרת מסך הפתיחה
@@ -1476,4 +1570,3 @@ inputField.addEventListener("input", () => {
   ).join(" ");
   inputField.value = capitalized;
 });
-
