@@ -305,87 +305,42 @@ canvas {
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script>
-    // Firebase config (public client config)
-    const firebaseConfig = {
-      "apiKey": "AIzaSyC1Tg2Q-1UpWzE1s-jG-ebTrK4GrZaN8cY",
-      "authDomain": "iron-dome-game-65886.firebaseapp.com",
-      "databaseURL": "https://iron-dome-game-65886-default-rtdb.firebaseio.com",
-      "projectId": "iron-dome-game-65886",
-      "storageBucket": "iron-dome-game-65886.firebasestorage.app",
-      "messagingSenderId": "165260440699",
-      "appId": "1:165260440699:web:bcd29ea757dc3819e71ede"
+    // Firebase init (guarded so it won't crash even if scripts are evaluated twice)
+    (function () {
+      if (window.__IRON_DOME_FB_INIT__) return;
+      window.__IRON_DOME_FB_INIT__ = true;
+
+      const cfg = {
+  "apiKey": "AIzaSyC1Tg2Q-1UpWzE1s-jG-ebTrK4GrZaN8cY",
+  "authDomain": "iron-dome-game-65886.firebaseapp.com",
+  "databaseURL": "https://iron-dome-game-65886-default-rtdb.firebaseio.com",
+  "projectId": "iron-dome-game-65886",
+  "storageBucket": "iron-dome-game-65886.firebasestorage.app",
+  "messagingSenderId": "165260440699",
+  "appId": "1:165260440699:web:bcd29ea757dc3819e71ede"
 };
-    firebase.initializeApp(firebaseConfig);
-    // Expose globally for game.js
-    window.database = firebase.database();
-    window.HS_PATH = "highScores";
-  </script>
-
-  <!-- Firebase (Realtime Database) -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-  <script>
-    // Make sure game.js and this page use the same DB path
-    window.HS_PATH = "highScores";
-
-    // Firebase config (public; safe to embed on a web client)
-    const firebaseConfig = {
-      apiKey: "AIzaSyClTg2Q-1UpWzE1s-jG-ebTrK4GrZaN8cY",
-      authDomain: "iron-dome-game-65886.firebaseapp.com",
-      databaseURL: "https://iron-dome-game-65886-default-rtdb.firebaseio.com",
-      projectId: "iron-dome-game-65886",
-      storageBucket: "iron-dome-game-65886.firebasestorage.app",
-      messagingSenderId: "165260440699",
-      appId: "1:165260440699:web:bcd29ea757dc3819e71ede",
-      measurementId: "G-54W7K6EF0S"
-    };
-
-    firebase.initializeApp(firebaseConfig);
-    window.database = firebase.database();
-
-    // Live leaderboard -> Start Screen list
-    const scoresList = document.getElementById("scoresList");
-    function renderScores(list) {
-      if (!scoresList) return;
-      scoresList.innerHTML = "";
-      list.forEach((entry, index) => {
-        const li = document.createElement("li");
-        li.textContent = `${index + 1}. ${entry.name} - ${entry.score}`;
-        scoresList.appendChild(li);
-      });
-    }
-
-    window.database.ref(window.HS_PATH).limitToLast(10).on("value", (snap) => {
-      const list = [];
-      snap.forEach(child => list.push(child.val()));
-      list.sort((a,b) => (b.score||0) - (a.score||0));
-      renderScores(list.slice(0,10));
-    }, (err) => {
-      console.error("HighScores listener error:", err);
-      // fallback: try local cache
-      try {
-        const cached = JSON.parse(localStorage.getItem("highScores") || "[]");
-        if (Array.isArray(cached)) renderScores(cached.slice(0,10));
-      } catch(_) {}
-    });
-
-    // Reset leaderboard (admin-style button)
-    document.getElementById("resetScoresBtn").addEventListener("click", async () => {
-      if (!confirm("האם אתה בטוח שברצונך לאפס את טבלת השיאים?")) return;
 
       try {
-        await window.database.ref(window.HS_PATH).remove();
+        // Avoid "already exists" / redeclare issues
+        if (!firebase.apps || !firebase.apps.length) {
+          firebase.initializeApp(cfg);
+        }
       } catch (e) {
-        console.error("Failed to reset Firebase scores:", e);
+        // If an app already exists, ignore; otherwise log
+        console.warn("Firebase init warning:", e);
       }
 
-      try { localStorage.removeItem("highScores"); } catch(_) {}
-      renderScores([]);
-    });
+      // Expose globally for game.js
+      try {
+        window.database = firebase.database();
+        window.HS_PATH = "highScores";
+      } catch (e) {
+        console.error("Firebase database init failed:", e);
+      }
+    })();
   </script>
 
-  <script src="game.js"></script>
-
+<script src="game.js"></script>
 <script>
   // Mobile friendly START button (click + touch)
   (function () {
@@ -433,6 +388,42 @@ canvas {
     }
   });
 </script>
+
+
+<script>
+  window.addEventListener("DOMContentLoaded", () => {
+    const isIphone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isIphone) {
+      const notice = document.getElementById("rotateNotice");
+      if (notice) {
+        notice.style.display = "block";
+        setTimeout(() => {
+          notice.style.display = "none";
+        }, 5000);
+      }
+    }
+  });
+</script>
+
+
+<script>
+  document.getElementById("resetScoresBtn").addEventListener("click", () => {
+    if (!confirm("האם אתה בטוח שברצונך לאפס את טבלת השיאים?")) return;
+
+    const scoresList = document.getElementById("scoresList");
+    scoresList.innerHTML = "";
+
+    // Prefer Firebase (global reset for everyone)
+    if (window.database) {
+      window.database.ref(window.HS_PATH || "highScores").remove()
+        .catch((err) => console.error("Failed to reset scores:", err));
+    } else {
+      // Fallback local reset
+      localStorage.removeItem("highScores");
+    }
+  });
+</script>
+
 
 
 <script>

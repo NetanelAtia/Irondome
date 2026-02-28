@@ -255,11 +255,16 @@ const nearPC = Math.abs(playerX - pcX) < 150;
 ctx.drawImage(ironDomeImg, ironDomeX, ironDomeY, 140, 160);
 
 if (gameOver) {
-  // Submit high score once (works for BOTH win & lose)
+  // Lock final score the moment the game ends so UI + DB always match
   if (!__scoreSubmitted) {
     __scoreSubmitted = true;
     __finalScore = Math.round(Number(score || 0));
+    // Freeze the score used everywhere after game end
+    score = __finalScore;
     try { saveHighScore(playerName, __finalScore); } catch (e) { console.error("saveHighScore failed:", e); }
+  } else if (typeof __finalScore === "number") {
+    // Keep score stable on subsequent frames
+    score = __finalScore;
   }
 
   if (gameWon) {
@@ -288,7 +293,7 @@ ctx.fillText("YOU WIN!", canvas.width / 2, startY);
 ctx.fillStyle = "white";
 ctx.font = "22px Arial"; // במקום 28px
 
-ctx.fillText(`Score: ${(__finalScore ?? score)}`, canvas.width / 2, startY + 50);
+ctx.fillText(`Score: ${score}`, canvas.width / 2, startY + 50);
 ctx.fillText(`City Damage: ${cityDamage}%`, canvas.width / 2, startY + 80);
 ctx.fillText(`Boss Hits: ${bossHitCount}`, canvas.width / 2, startY + 110);
 ctx.fillText(`Missiles Intercepted: ${interceptedMissiles}`, canvas.width / 2, startY + 140);
@@ -1011,7 +1016,7 @@ const offsetY = isIphone ? 50 : 0;  // מזיז למטה רק באייפון
 ctx.fillStyle = "black";
 ctx.font = "20px Arial";
 ctx.fillText(`Lives: ${lives}`, 20, 40 + offsetY);
-ctx.fillText(`Score: ${(__finalScore ?? score)}`, 20, 70 + offsetY);
+ctx.fillText(`Score: ${score}`, 20, 70 + offsetY);
 ctx.fillText(`Iron Dome Ammo: ${ironDomeAmmo}`, 20, 100 + offsetY);
 
 ctx.fillStyle = "red";
@@ -1523,9 +1528,3 @@ inputField.addEventListener("input", () => {
   inputField.value = capitalized;
 });
 
-
-
-// Expose API for inline handlers / other scripts
-try { window.startGame = startGame; } catch(_) {}
-try { window.saveHighScore = saveHighScore; } catch(_) {}
-try { window.getHighScores = () => highScores.slice(); } catch(_) {}
