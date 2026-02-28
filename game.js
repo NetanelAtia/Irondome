@@ -123,7 +123,11 @@ let groundEnemies = [], enemySpawnTimer = Date.now(), enemyInterval = 5000 + Mat
 let enemyBullets = [], enemyBulletSpeed = 4;
 let enemyFrameCounter = 0;
 let flagAnimCounter = 0;
-let gameOver = false;
+let gameWon = false;
+      scoreSubmitted = false;
+
+      gameOver = false;
+let scoreSubmitted = false; // prevent duplicate cloud submissions
 let gameWon = false;
 
 let restartButton = {
@@ -206,6 +210,12 @@ const nearPC = Math.abs(playerX - pcX) < 150;
 ctx.drawImage(ironDomeImg, ironDomeX, ironDomeY, 140, 160);
 
 if (gameOver) {
+  // Submit score to cloud once on GAME OVER (when player loses)
+  if (!gameWon && !scoreSubmitted) {
+    scoreSubmitted = true;
+    if (window.submitScoreToCloud) window.submitScoreToCloud(playerName, score);
+  }
+
   if (gameWon) {
     const timeSinceBossExplosion = Date.now() - bossExplosionTime;
 
