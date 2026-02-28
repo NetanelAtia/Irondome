@@ -62,22 +62,10 @@ const shootSound = new Audio("sound/shoot.wav");
 const enemyShootSound = new Audio("sound/shoot2.wav");
 
 let playerName = ""; // שם השחקן שמוזן בהתחלה
-let highScores = []; // High scores are loaded from Firebase (global leaderboard)
+let highScores = JSON.parse(localStorage.getItem("highScores") || "[]"); // טעינת שיאים מזיכרון הדפדפן
 const isIphone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 const isAndroid = /Android/i.test(navigator.userAgent);
 const isMobile = isIphone || isAndroid;
-
-// === Firebase: sync global high scores (TOP 10) ===
-if (window.database) {
-  window.database.ref("scores")
-    .limitToLast(200)
-    .on("value", (snapshot) => {
-      const arr = [];
-      snapshot.forEach((child) => arr.push(child.val()));
-      arr.sort((a, b) => (b.score || 0) - (a.score || 0));
-      highScores = arr.slice(0, 10);
-    });
-}
 
 
 let playerX = 100, playerY = 500, velocityY = 0, gravity = isIphone ? 0.35 : isAndroid ? 0.3 : 0.2, isJumping = false;
@@ -123,11 +111,7 @@ let groundEnemies = [], enemySpawnTimer = Date.now(), enemyInterval = 5000 + Mat
 let enemyBullets = [], enemyBulletSpeed = 4;
 let enemyFrameCounter = 0;
 let flagAnimCounter = 0;
-let gameWon = false;
-      scoreSubmitted = false;
-
-      gameOver = false;
-let scoreSubmitted = false; // prevent duplicate cloud submissions
+let gameOver = false;
 let gameWon = false;
 
 let restartButton = {
@@ -210,12 +194,6 @@ const nearPC = Math.abs(playerX - pcX) < 150;
 ctx.drawImage(ironDomeImg, ironDomeX, ironDomeY, 140, 160);
 
 if (gameOver) {
-  // Submit score to cloud once on GAME OVER (when player loses)
-  if (!gameWon && !scoreSubmitted) {
-    scoreSubmitted = true;
-    if (window.submitScoreToCloud) window.submitScoreToCloud(playerName, score);
-  }
-
   if (gameWon) {
     const timeSinceBossExplosion = Date.now() - bossExplosionTime;
 
@@ -431,14 +409,6 @@ if (bossHealth <= 0) {
   // מיון השיאים מהגבוה לנמוך ושמירה של 10 שיאים בלבד
   highScores.sort((a, b) => b.score - a.score);
   highScores = highScores.slice(0, 10);
-
-  // שמירת השיאים בזיכרון הדפדפן
-  if (window.submitScoreToCloud) window.submitScoreToCloud(playerName, score);
-
-
-
-
-
 scorePopups.push({
   text: "+1000",
   x: boss.x,
@@ -694,10 +664,6 @@ if (bossHealth <= 0) {
   // מיון מהגבוה לנמוך, שמירה של עד 10 שיאים
   highScores.sort((a, b) => b.score - a.score);
   highScores = highScores.slice(0, 10);
-
-  // שמירה בזיכרון הדפדפן
-  if (window.submitScoreToCloud) window.submitScoreToCloud(playerName, score);
-
   scorePopups.push({
     text: "+1000",
     x: boss.x,
@@ -789,10 +755,6 @@ if (
       highScores.push({ name: playerName, score });
       highScores.sort((a, b) => b.score - a.score);
       highScores = highScores.slice(0, 10);
-      if (window.submitScoreToCloud) window.submitScoreToCloud(playerName, score);
-
-  
-
       scorePopups.push({
         text: "+1000",
         x: boss.x,
@@ -1135,7 +1097,15 @@ setTimeout(waitAndShootB2Missiles, 1000);
   }
 }
 
-  requestAnimationFrame(gameLoop);
+    // Save score once when the run ends (GAME OVER)
+  try {
+    if (typeof gameOver !== "undefined" && gameOver && !__lastGameOver) {
+      __submitHighScoreOnce(score);
+    }
+    __lastGameOver = !!gameOver;
+  } catch(e) { /* ignore */ }
+
+requestAnimationFrame(gameLoop);
 }
 
 
@@ -1330,7 +1300,9 @@ canvas.addEventListener("touchstart", handleCanvasClick, { passive: false });
 
 
 function startGame() {
-  isGameRunning = true;
+  __highScoreSubmitted = false;
+  __lastGameOver = false;
+isGameRunning = true;
 
   const input = document.getElementById("playerNameInput");
   const name = input.value.trim();
@@ -1364,31 +1336,29 @@ playerName = formattedName;
   if (isMobile) {
     const container = document.getElementById("container");
 
-    // בקשת מסך מלא (iOS יכול לזרוק חריגות/לא לתמוך על אלמנטים שאינם וידאו)
+    // בקשת מסך מלא (אל תקריס את המשחק אם הדפדפן לא תומך / חוסם)
     try {
-      if (container && typeof container.requestFullscreen === "function") {
+      if (container.requestFullscreen) {
         container.requestFullscreen().catch(() => {});
-      } else if (container && typeof container.webkitRequestFullscreen === "function") {
-        // חלק מגרסאות iOS מחזירות פונקציה שלא באמת עובדת על DIV – לכן עוטפים ב-try/catch
+      } else if (container.webkitRequestFullscreen) {
         container.webkitRequestFullscreen();
       }
-    } catch (err) {
-      // לא חוסם התחלת משחק אם Fullscreen נכשל
-      console.warn("Fullscreen not available:", err);
+    } catch (e) {
+      // iOS / Safari לפעמים זורק שגיאה – מתעלמים וממשיכים
     }
 
-    // בקשת סיבוב למסך לרוחב (אם אפשר)
+    // בקשת סיבוב למסך לרוחב (אם אפשר) – גם כאן לא להפיל את start
     try {
-      if (screen.orientation && typeof screen.orientation.lock === "function") {
+      if (screen.orientation && screen.orientation.lock) {
         screen.orientation.lock("landscape").catch(() => {});
       }
-    } catch (err) {
-      console.warn("Orientation lock not available:", err);
+    } catch (e) {
+      // לא נתמך באייפון ברוב המקרים – מתעלמים
     }
+  }
   }
 
   // הסתרת מסך הפתיחה
-
   document.getElementById("startScreen").style.display = "none";
 
   // התחלת שעון המשחק
