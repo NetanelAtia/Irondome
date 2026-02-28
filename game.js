@@ -64,6 +64,8 @@ const enemyShootSound = new Audio("sound/shoot2.wav");
 let playerName = ""; // שם השחקן שמוזן בהתחלה
 
 let highScores = [];
+let __pendingScores = []; // scores saved locally but not yet confirmed from Firebase
+
 let __scoreSubmitted = false;
 let __finalScore = null;
 
@@ -91,11 +93,25 @@ function __syncHighScoresFromFirebase() {
   window.database.ref(HS_PATH).orderByChild("score").limitToLast(10).on("value", (snapshot) => {
     const list = [];
     snapshot.forEach((child) => list.push(child.val()));
-    list.sort((a, b) => (b.score || 0) - (a.score || 0));
-    highScores = list.slice(0, 10);
+
+    // ✅ Merge with pending local saves so UI never "misses" a new high score
+    const merged = [...list, ...(__pendingScores || [])];
+
+    merged.sort((a, b) => (b.score || 0) - (a.score || 0) || (b.timestamp || 0) - (a.timestamp || 0));
+    highScores = merged.slice(0, 10);
+
+    // ✅ If Firebase now contains a pending entry, remove it from pending
+    if (__pendingScores && __pendingScores.length) {
+      const key = (x) => `${x.name}|${x.score}|${x.timestamp}`;
+      const inFirebase = new Set(list.map(key));
+      __pendingScores = __pendingScores.filter(p => !inFirebase.has(key(p)));
+      // Also cap pending to avoid unbounded growth
+      if (__pendingScores.length > 50) __pendingScores = __pendingScores.slice(-50);
+    }
+
     // keep local cache as backup
     try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch(_) {}
-}, (err) => {
+  }, (err) => {
     console.error("HighScores listener error:", err);
     __loadHighScoresFallback();
   });
@@ -104,17 +120,28 @@ function __syncHighScoresFromFirebase() {
 function saveHighScore(name, score) {
   const s = Number(score || 0);
   if (!Number.isFinite(s) || s <= 0) return;
-  const entry = { name: String(name || "Player").slice(0, 20), score: Math.round(s), timestamp: Date.now() };
 
-  // Update local cache immediately (so UI that relies on localStorage still shows something)
-  highScores.push({ name: entry.name, score: entry.score, timestamp: entry.timestamp });
-  highScores.sort((a, b) => (b.score || 0) - (a.score || 0));
-  highScores = highScores.slice(0, 10);
+  const entry = {
+    name: String(name || "Player").slice(0, 20),
+    score: Math.round(s),
+    timestamp: Date.now()
+  };
+
+  // ✅ Always update local list immediately so the WIN/LOSE screen shows the new score instantly
+  __pendingScores.push(entry);
+
+  // Merge pending into highScores locally (prevents losing it if Firebase is slow or blocked)
+  const mergedLocal = [...highScores, ...__pendingScores];
+  mergedLocal.sort((a, b) => (b.score || 0) - (a.score || 0) || (b.timestamp || 0) - (a.timestamp || 0));
+  highScores = mergedLocal.slice(0, 10);
+
   try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch(_) {}
 
   // Push to Firebase if available
   if (window.database) {
-    window.database.ref(HS_PATH).push(entry).catch((err) => {
+    window.database.ref(HS_PATH).push(entry).then(() => {
+      // We'll remove it from pending when the listener reflects it.
+    }).catch((err) => {
       console.error("Failed to save score to Firebase:", err);
     });
   }
@@ -210,7 +237,7 @@ let flagAnimIndex = 0;
 
 function gameLoop() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  // ✅ Safety: reset score-submission lock only during an active run (not on menus)
+  // ✅ Safety: reset score-submission lock only during an active run
   if (isGameRunning && !gameOver && (__scoreSubmitted || __finalScore !== null)) {
     __scoreSubmitted = false;
     __finalScore = null;
@@ -1415,9 +1442,10 @@ playerName = formattedName;
     }
   }
 
-    // ✅ Always allow saving a new score for this run
+    // ✅ New run: allow score submission again
   __scoreSubmitted = false;
   __finalScore = null;
+  __pendingScores = [];
 
 // הסתרת מסך הפתיחה
   document.getElementById("startScreen").style.display = "none";
