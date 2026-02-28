@@ -88,7 +88,7 @@ function __syncHighScoresFromFirebase() {
     __loadHighScoresFallback();
     return;
   }
-  window.database.ref(HS_PATH).limitToLast(10).on("value", (snapshot) => {
+  window.database.ref(HS_PATH).orderByChild("score").limitToLast(10).on("value", (snapshot) => {
     const list = [];
     snapshot.forEach((child) => list.push(child.val()));
     list.sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -210,6 +210,12 @@ let flagAnimIndex = 0;
 
 function gameLoop() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // ✅ Safety: whenever a new run is active, make sure score submission lock is reset
+  if (!gameOver && (__scoreSubmitted || __finalScore !== null)) {
+    __scoreSubmitted = false;
+    __finalScore = null;
+  }
+
   if (document.getElementById("startScreen").style.display !== "none") {
     ctx.drawImage(backgroundImg, 0, 0, canvas.width, canvas.height);
     requestAnimationFrame(gameLoop);
@@ -723,13 +729,6 @@ if (bossHealth <= 0) {
   bossActive = false;
   bossIsDying = true;
   bossExplosionTime = Date.now();
-
-  // הוספת השם והניקוד לרשימת השיאים
-  highScores.push({ name: playerName, score: score });
-
-  // מיון מהגבוה לנמוך, שמירה של עד 10 שיאים
-  highScores.sort((a, b) => b.score - a.score);
-  highScores = highScores.slice(0, 10);
   scorePopups.push({
     text: "+1000",
     x: boss.x,
