@@ -3,6 +3,49 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
+
+function roundRect(ctx, x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
+function drawUIButton(ctx, btn, label, style) {
+  const radius = style?.radius ?? 10;
+
+  // shadow
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.35)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 4;
+
+  // background
+  ctx.fillStyle = style?.bg ?? "#4b5563"; // slate
+  roundRect(ctx, btn.x, btn.y, btn.width, btn.height, radius);
+  ctx.fill();
+
+  // border
+  ctx.shadowColor = "transparent";
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = style?.border ?? "rgba(255,255,255,0.18)";
+  ctx.stroke();
+
+  // text
+  ctx.shadowColor = "transparent";
+  ctx.fillStyle = style?.text ?? "white";
+  ctx.font = style?.font ?? "22px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, btn.x + btn.width / 2, btn.y + btn.height / 2 + 1);
+
+  ctx.restore();
+}
+
 let isGameRunning = false; // מציין אם המשחק פעיל
 
 
@@ -200,9 +243,9 @@ let gameWon = false;
 
 let restartButton = {
   x: canvas.width / 2 - 100,
-  y: canvas.height * 0.7,
-  width: 200,
-  height: 50
+  y: canvas.height * 0.72,
+  width: 160,
+  height: 44
 };
 
 
@@ -210,9 +253,9 @@ let restartButton = {
 
 let mainMenuButton = {
   x: canvas.width / 2 + 20,
-  y: canvas.height * 0.7,
-  width: 200,
-  height: 50
+  y: canvas.height * 0.72,
+  width: 160,
+  height: 44
 };
 function getRandomBombInterval() {
   return 1500 + Math.random() * 3000; // בין 1.5 ל־4.5 שניות
@@ -327,28 +370,29 @@ ctx.font = "50px Arial"; // במקום 70px
 ctx.fillText("YOU WIN!", canvas.width / 2, startY);
 
 ctx.fillStyle = "white";
-ctx.font = "22px Arial"; // במקום 28px
+ctx.font = "22px Arial";
 
-ctx.fillText(`Your Name: ${playerName || "Player"}`, canvas.width / 2, startY + 50);
-  ctx.fillText(`Score: ${score}`, canvas.width / 2, startY + 80);
-ctx.fillText(`City Damage: ${cityDamage}%`, canvas.width / 2, startY + 80);
-ctx.fillText(`Boss Hits: ${bossHitCount}`, canvas.width / 2, startY + 110);
-ctx.fillText(`Missiles Intercepted: ${interceptedMissiles}`, canvas.width / 2, startY + 140);
-ctx.fillText(`Ground Enemies Killed: ${killedEnemies}`, canvas.width / 2, startY + 170);
+let lineY = startY + 50;
+const lineStep = 28;
 
-ctx.font = "20px Arial"; // גם את זה נקטין
-ctx.fillText("🏆 High Scores:", canvas.width / 2, startY + 210);
+ctx.fillText(`Your Name: ${playerName || "Player"}`, canvas.width / 2, lineY); lineY += lineStep;
+ctx.fillText(`Score: ${score}`, canvas.width / 2, lineY); lineY += lineStep;
+ctx.fillText(`City Damage: ${cityDamage}%`, canvas.width / 2, lineY); lineY += lineStep;
+ctx.fillText(`Boss Hits: ${bossHitCount}`, canvas.width / 2, lineY); lineY += lineStep;
+ctx.fillText(`Missiles Intercepted: ${interceptedMissiles}`, canvas.width / 2, lineY); lineY += lineStep;
+ctx.fillText(`Ground Enemies Killed: ${killedEnemies}`, canvas.width / 2, lineY); lineY += (lineStep + 10);
 
-
+ctx.font = "20px Arial";
+ctx.fillText("🏆 High Scores:", canvas.width / 2, lineY); lineY += lineStep;
  for (let i = 0; i < highScores.length; i++) {
   const entry = highScores[i];
-  ctx.fillText(`${i + 1}. ${entry.name} - ${entry.score}`, canvas.width / 2, startY + 240 + i * 25);
+  ctx.fillText(`${i + 1}. ${entry.name} - ${entry.score}`, canvas.width / 2, lineY + i * 25);
 }
 
 
 
   // כפתור ריסטארט
-restartButton.y = startY + 240 + highScores.length * 25 + 40;
+restartButton.y = lineY + highScores.length * 25 + 40;
   restartButton.x = canvas.width / 2 - restartButton.width / 2;
 
   ctx.fillStyle = "gray";
@@ -367,13 +411,7 @@ restartButton.x = startX;
 mainMenuButton.x = startX + restartButton.width + gap;
 mainMenuButton.y = restartButton.y;
 
-// Main Menu button
-ctx.fillStyle = "gray";
-ctx.fillRect(mainMenuButton.x, mainMenuButton.y, mainMenuButton.width, mainMenuButton.height);
-
-ctx.fillStyle = "white";
-ctx.font = "26px Arial";
-ctx.fillText("Main Menu", mainMenuButton.x + mainMenuButton.width / 2, mainMenuButton.y + 33);
+drawUIButton(ctx, mainMenuButton, "Main Menu", { bg: "#374151", border: "rgba(255,255,255,0.18)", font: "20px Arial", radius: 12 });
   ctx.textAlign = "start";
 
   requestAnimationFrame(gameLoop);

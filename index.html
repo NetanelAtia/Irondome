@@ -365,13 +365,13 @@ canvas {
       scoresList.innerHTML = "";
       (list || []).forEach((entry, index) => {
         const li = document.createElement("li");
-        li.textContent = `${index + 1}. ${entry.name} - ${entry.bestScore}`;
+        li.textContent = `${index + 1}. ${entry.name} - ${(entry.bestScore ?? entry.score)}`;
         scoresList.appendChild(li);
       });
     }
 
     if (window.database) {
-      window.database.ref(window.HS_PATH || "highScores")
+      window.database.ref(window.HS_PATH || "highScoresByPlayer")
         .orderByChild("bestScore")
         .limitToLast(10)
         .on("value", (snapshot) => {
