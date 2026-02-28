@@ -64,9 +64,10 @@ const enemyShootSound = new Audio("sound/shoot2.wav");
 let playerName = ""; // שם השחקן שמוזן בהתחלה
 
 let highScores = [];
-let __scoreSubmitted = false;
-let __finalScore = null;
+let __sessionId = 0;
+let __submittedSessionId = -1;
 
+function __newSession(){ __sessionId++; }
 // ===== High Scores (Firebase Realtime DB with local fallback) =====
 const HS_PATH = (window.HS_PATH || "highScores");
 
@@ -255,11 +256,11 @@ const nearPC = Math.abs(playerX - pcX) < 150;
 ctx.drawImage(ironDomeImg, ironDomeX, ironDomeY, 140, 160);
 
 if (gameOver) {
-  // Submit high score once (works for BOTH win & lose)
-  if (!__scoreSubmitted) {
-    __scoreSubmitted = true;
-    __finalScore = Math.round(Number(score || 0));
-    try { saveHighScore(playerName, __finalScore); } catch (e) { console.error("saveHighScore failed:", e); }
+  // Submit high score once per session (works for BOTH win & lose)
+  if (__submittedSessionId !== __sessionId) {
+    __submittedSessionId = __sessionId;
+    const finalScore = Math.round(Number(score || 0));
+    try { saveHighScore(playerName, finalScore); } catch (e) { console.error("saveHighScore failed:", e); }
   }
 
   if (gameWon) {
@@ -1337,8 +1338,8 @@ function handleCanvasClick(e) {
 
       gameOver = false;
 	      // חשוב: לאפשר שמירת שיא גם אחרי Restart
-	      __scoreSubmitted = false;
-	      __finalScore = null;
+	      __newSession();
+	      __submittedSessionId = -1;
     }
   }
 }
@@ -1352,6 +1353,9 @@ canvas.addEventListener("touchstart", handleCanvasClick, { passive: false });
 
 
 function startGame() {
+  __newSession();
+  __submittedSessionId = -1;
+
   isGameRunning = true;
 
   const input = document.getElementById("playerNameInput");
@@ -1381,8 +1385,8 @@ playerName = formattedName;
 
 	// חשוב: מאפסים את הדגל כדי שנוכל לשמור שיא *בכל* משחק מחדש
 	// בלי זה, אחרי משחק אחד __scoreSubmitted נשאר true ולכן משחקים הבאים לא נשמרים ל-DB.
-	__scoreSubmitted = false;
-	__finalScore = null;
+	__newSession();
+	__submittedSessionId = -1;
 
 
   // בדיקה אם זה טלפון נייד
