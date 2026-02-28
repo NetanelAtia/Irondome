@@ -1299,6 +1299,10 @@ function handleCanvasClick(e) {
       my <= restartButton.y + restartButton.height
     ) {
       // התחלת המשחק מחדש
+      // Reset per-run flags (important for saving scores on subsequent runs)
+      __scoreSubmitted = false;
+      __finalScore = null;
+      gameWon = false;
       playerX = 100;
       playerY = 500;
       lives = 10;
@@ -1336,10 +1340,6 @@ function handleCanvasClick(e) {
       lastBossScore = -5000;
 
       gameOver = false;
-          // Reset score-submit guard for the restarted run
-      __scoreSubmitted = false;
-      __finalScore = null;
-      gameWon = false;
     }
   }
 }
@@ -1353,13 +1353,12 @@ canvas.addEventListener("touchstart", handleCanvasClick, { passive: false });
 
 
 function startGame() {
-  isGameRunning = true;
-
-
-  // Reset score-submit guard for a new run
+  // Reset per-run flags so every new game can submit a score
   __scoreSubmitted = false;
   __finalScore = null;
   gameWon = false;
+  isGameRunning = true;
+
   const input = document.getElementById("playerNameInput");
   const name = input.value.trim();
 
