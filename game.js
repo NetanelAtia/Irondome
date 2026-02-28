@@ -63,6 +63,10 @@ const enemyShootSound = new Audio("sound/shoot2.wav");
 
 let playerName = ""; // שם השחקן שמוזן בהתחלה
 
+let highScores = [];
+let __scoreSubmitted = false;
+let __finalScore = null;
+
 // ===== High Scores (Firebase Realtime DB with local fallback) =====
 const HS_PATH = (window.HS_PATH || "highScores");
 
@@ -90,15 +94,17 @@ function __syncHighScoresFromFirebase() {
     list.sort((a, b) => (b.score || 0) - (a.score || 0));
     highScores = list.slice(0, 10);
     // keep local cache as backup
-    try { saveHighScore(playerName, score); // saves to Firebase (or local fallback) } catch(_) {}
-  }, (err) => {
+    try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch(_) {}
+}, (err) => {
     console.error("HighScores listener error:", err);
     __loadHighScoresFallback();
   });
 }
 
 function saveHighScore(name, score) {
-  const entry = { name: String(name || "Player").slice(0, 20), score: Number(score || 0), timestamp: Date.now() };
+  const s = Number(score || 0);
+  if (!Number.isFinite(s) || s <= 0) return;
+  const entry = { name: String(name || "Player").slice(0, 20), score: Math.round(s), timestamp: Date.now() };
 
   // Update local cache immediately (so UI that relies on localStorage still shows something)
   highScores.push({ name: entry.name, score: entry.score });
@@ -118,7 +124,6 @@ function saveHighScore(name, score) {
 setTimeout(__syncHighScoresFromFirebase, 0);
 // ================================================================
 
-let highScores = []; // will be synced from Firebase (if available) or localStorage fallback
 const isIphone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 const isAndroid = /Android/i.test(navigator.userAgent);
 const isMobile = isIphone || isAndroid;
@@ -250,6 +255,13 @@ const nearPC = Math.abs(playerX - pcX) < 150;
 ctx.drawImage(ironDomeImg, ironDomeX, ironDomeY, 140, 160);
 
 if (gameOver) {
+  // Submit high score once (works for BOTH win & lose)
+  if (!__scoreSubmitted) {
+    __scoreSubmitted = true;
+    __finalScore = Math.round(Number(score || 0));
+    try { saveHighScore(playerName, __finalScore); } catch (e) { console.error("saveHighScore failed:", e); }
+  }
+
   if (gameWon) {
     const timeSinceBossExplosion = Date.now() - bossExplosionTime;
 
@@ -458,9 +470,6 @@ if (bossHealth <= 0) {
   bossActive = false;
   bossIsDying = true;
   bossExplosionTime = Date.now();
-
-  // הוספת השם והניקוד לרשימת השיאים
-  saveHighScore(playerName, score);
 scorePopups.push({
   text: "+1000",
   x: boss.x,
@@ -716,10 +725,6 @@ if (bossHealth <= 0) {
   // מיון מהגבוה לנמוך, שמירה של עד 10 שיאים
   highScores.sort((a, b) => b.score - a.score);
   highScores = highScores.slice(0, 10);
-
-  // שמירה בזיכרון הדפדפן
-  localStorage.setItem("highScores", JSON.stringify(highScores));
-
   scorePopups.push({
     text: "+1000",
     x: boss.x,
@@ -807,14 +812,6 @@ if (
   bossExplosionTime = Date.now();
 
       score += 1000;
-
-      highScores.push({ name: playerName, score });
-      highScores.sort((a, b) => b.score - a.score);
-      highScores = highScores.slice(0, 10);
-      localStorage.setItem("highScores", JSON.stringify(highScores));
-
-  
-
       scorePopups.push({
         text: "+1000",
         x: boss.x,
@@ -1384,18 +1381,26 @@ playerName = formattedName;
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   if (isMobile) {
-    const container = document.getElementById("container");
+    // iOS Safari: fullscreen/orientation APIs are inconsistent. Never let it break START.
+    try {
+      const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const container = document.getElementById("container");
 
-    // בקשת מסך מלא
-    if (container.requestFullscreen) {
-      container.requestFullscreen().catch(() => {});
-    } else if (container.webkitRequestFullscreen) {
-      container.webkitRequestFullscreen();
-    }
+      // Fullscreen: skip on iOS (often unsupported on arbitrary elements)
+      if (!isIOS && container) {
+        if (container.requestFullscreen) {
+          container.requestFullscreen().catch(() => {});
+        } else if (container.webkitRequestFullscreen) {
+          try { container.webkitRequestFullscreen(); } catch (_) {}
+        }
+      }
 
-    // בקשת סיבוב למסך לרוחב (אם אפשר)
-    if (screen.orientation && screen.orientation.lock) {
-      screen.orientation.lock("landscape").catch(() => {});
+      // Orientation lock (only works in some browsers, and usually only in fullscreen)
+      if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock("landscape").catch(() => {});
+      }
+    } catch (e) {
+      console.warn("Mobile fullscreen/orientation skipped:", e);
     }
   }
 

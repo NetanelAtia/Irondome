@@ -272,7 +272,7 @@ canvas {
 
   <div id="gameTitle">IRON DOME</div>
   <input type="text" id="playerNameInput" placeholder="Enter your name" />
-  <button id="startButton" onclick="startGame()">START GAME</button>
+  <button id="startButton">START GAME</button>
   <button id="resetScoresBtn">Reset High Scores</button>
 
 
@@ -321,6 +321,20 @@ canvas {
     window.HS_PATH = "highScores";
   </script>
   <script src="game.js"></script>
+<script>
+  // Mobile friendly START button (click + touch)
+  (function () {
+    const btn = document.getElementById('startButton');
+    if (!btn) return;
+    const run = (e) => {
+      if (e) { try { e.preventDefault(); } catch(_) {} try { e.stopPropagation(); } catch(_) {} }
+      if (typeof window.startGame === 'function') window.startGame();
+    };
+    btn.addEventListener('click', run);
+    btn.addEventListener('touchend', run, { passive: false });
+  })();
+</script>
+
 
 <script>
   // Render High Scores (global via Firebase). Fallback to localStorage if Firebase not available.
