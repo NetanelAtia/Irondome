@@ -107,7 +107,7 @@ function saveHighScore(name, score) {
   const entry = { name: String(name || "Player").slice(0, 20), score: Math.round(s), timestamp: Date.now() };
 
   // Update local cache immediately (so UI that relies on localStorage still shows something)
-  highScores.push({ name: entry.name, score: entry.score });
+  highScores.push({ name: entry.name, score: entry.score, timestamp: entry.timestamp });
   highScores.sort((a, b) => (b.score || 0) - (a.score || 0));
   highScores = highScores.slice(0, 10);
   try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch(_) {}
@@ -210,8 +210,8 @@ let flagAnimIndex = 0;
 
 function gameLoop() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  // ✅ Safety: whenever a new run is active, make sure score submission lock is reset
-  if (!gameOver && (__scoreSubmitted || __finalScore !== null)) {
+  // ✅ Safety: reset score-submission lock only during an active run (not on menus)
+  if (isGameRunning && !gameOver && (__scoreSubmitted || __finalScore !== null)) {
     __scoreSubmitted = false;
     __finalScore = null;
   }
@@ -1415,7 +1415,11 @@ playerName = formattedName;
     }
   }
 
-  // הסתרת מסך הפתיחה
+    // ✅ Always allow saving a new score for this run
+  __scoreSubmitted = false;
+  __finalScore = null;
+
+// הסתרת מסך הפתיחה
   document.getElementById("startScreen").style.display = "none";
 
   // התחלת שעון המשחק

@@ -340,7 +340,7 @@ canvas {
     })();
   </script>
 
-<script src="game_fixed.js"></script>
+<script src="game.js"></script>
 <script>
   // Mobile friendly START button (click + touch)
   (function () {
@@ -373,6 +373,7 @@ canvas {
     // If Firebase is connected, listen live
     if (window.database) {
       window.database.ref(window.HS_PATH || "highScores")
+        .orderByChild("score")
         .limitToLast(10)
         .on("value", (snapshot) => {
           const list = [];
@@ -416,6 +417,7 @@ canvas {
     // Prefer Firebase (global reset for everyone)
     if (window.database) {
       window.database.ref(window.HS_PATH || "highScores").remove()
+        .then(() => { try { localStorage.setItem("highScores", "[]"); } catch(_) {} })
         .catch((err) => console.error("Failed to reset scores:", err));
     } else {
       // Fallback local reset
