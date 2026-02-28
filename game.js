@@ -68,12 +68,20 @@ let highScores = [];
 let __scoreSubmitted = false;
 let __finalScore = null;
 
-// ===== High Scores (Firebase Realtime DB with local fallback) =====
-const HS_PATH = (window.HS_PATH || "highScores");;
+// ===== High Scores (Firebase Realtime DB - per player best score, global) =====
+// Stores ONE record per player name (best score). This prevents duplicates and updates correctly for everyone.
+// Path: /highScoresByPlayer/<normalizedName>
+const HS_PATH = (window.HS_PATH || "highScoresByPlayer");
+let __hsListenerAttached = false;
 
-function __loadHighScoresFallback() {
-  // Firebase-only mode: no local fallback
-  highScores = [];
+function __normalizePlayerKey(name) {
+  // Firebase RTDB key-safe, stable key per name
+  return String(name || "player")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 32) || "player";
 }
 
 function __syncHighScoresFromFirebase() {
@@ -83,26 +91,23 @@ function __syncHighScoresFromFirebase() {
   __hsListenerAttached = true;
 
   window.database.ref(HS_PATH)
-    .orderByChild("score")
+    .orderByChild("bestScore")
     .limitToLast(10)
     .on("value", (snapshot) => {
       const list = [];
-      snapshot.forEach((child) => list.push(child.val()));
+      snapshot.forEach((child) => {
+        const v = child.val() || {};
+        list.push({
+          key: child.key,
+          name: v.name || "Player",
+          score: Number(v.bestScore || 0),
+          updatedAt: Number(v.updatedAt || 0)
+        });
+      });
 
-      // Sort descending by score (and timestamp as tiebreaker)
-      list.sort((a, b) => (b.score || 0) - (a.score || 0) || (b.timestamp || 0) - (a.timestamp || 0));
-
-      // Dedupe exact duplicates (same name+score+timestamp)
-      const seen = new Set();
-      const deduped = [];
-      for (const e of list) {
-        const k = `${e?.name || ""}|${e?.score || 0}|${e?.timestamp || 0}`;
-        if (seen.has(k)) continue;
-        seen.add(k);
-        deduped.push(e);
-      }
-
-      highScores = deduped.slice(0, 10);
+      // Sort descending by score (and updatedAt for stable ordering)
+      list.sort((a, b) => (b.score - a.score) || (b.updatedAt - a.updatedAt));
+      highScores = list.slice(0, 10);
     }, (err) => {
       console.error("HighScores listener error:", err);
     });
@@ -110,27 +115,32 @@ function __syncHighScoresFromFirebase() {
 
 function saveHighScore(name, score) {
   const s = Number(score || 0);
-  if (!Number.isFinite(s) || s <= 0) return;
-
-  const entry = {
-    name: String(name || "Player").slice(0, 20),
-    score: Math.round(s),
-    timestamp: Date.now()
-  };
+  if (!Number.isFinite(s) || s <= 0) return Promise.resolve(false);
 
   if (!window.database) {
     console.warn("Firebase database not available; score not saved globally.");
-    return;
+    return Promise.resolve(false);
   }
 
-  // Firebase-only save
-  window.database.ref(HS_PATH).push(entry)
-    .then(() => {
-      // Saved; the live listener will update highScores array
-    })
-    .catch((err) => {
-      console.error("Failed to save score to Firebase:", err);
-    });
+  const displayName = String(name || "Player").trim().slice(0, 20) || "Player";
+  const key = __normalizePlayerKey(displayName);
+  const ref = window.database.ref(HS_PATH).child(key);
+
+  // Atomic "max" update: only overwrite if new score is higher
+  return ref.transaction((curr) => {
+    const prev = curr && Number(curr.bestScore || 0);
+    if (!curr || !Number.isFinite(prev) || s > prev) {
+      return {
+        name: displayName,
+        bestScore: Math.round(s),
+        updatedAt: Date.now()
+      };
+    }
+    return curr; // keep existing best
+  }).then(() => true).catch((err) => {
+    console.error("Failed to save score to Firebase:", err);
+    return false;
+  });
 }
 
 // Start syncing as soon as possible
@@ -197,6 +207,13 @@ let restartButton = {
 
 
 
+
+let mainMenuButton = {
+  x: canvas.width / 2 + 20,
+  y: canvas.height * 0.7,
+  width: 200,
+  height: 50
+};
 function getRandomBombInterval() {
   return 1500 + Math.random() * 3000; // בין 1.5 ל־4.5 שניות
 }
@@ -312,7 +329,8 @@ ctx.fillText("YOU WIN!", canvas.width / 2, startY);
 ctx.fillStyle = "white";
 ctx.font = "22px Arial"; // במקום 28px
 
-ctx.fillText(`Score: ${score}`, canvas.width / 2, startY + 50);
+ctx.fillText(`Your Name: ${playerName || "Player"}`, canvas.width / 2, startY + 50);
+  ctx.fillText(`Score: ${score}`, canvas.width / 2, startY + 80);
 ctx.fillText(`City Damage: ${cityDamage}%`, canvas.width / 2, startY + 80);
 ctx.fillText(`Boss Hits: ${bossHitCount}`, canvas.width / 2, startY + 110);
 ctx.fillText(`Missiles Intercepted: ${interceptedMissiles}`, canvas.width / 2, startY + 140);
@@ -340,6 +358,22 @@ restartButton.y = startY + 240 + highScores.length * 25 + 40;
   ctx.font = "28px Arial";
   ctx.fillText("Restart", restartButton.x + restartButton.width / 2, restartButton.y + 33);
 
+// Place Restart + Main Menu buttons side by side and centered
+const gap = 20;
+const totalW = restartButton.width + gap + mainMenuButton.width;
+const startX = canvas.width / 2 - totalW / 2;
+
+restartButton.x = startX;
+mainMenuButton.x = startX + restartButton.width + gap;
+mainMenuButton.y = restartButton.y;
+
+// Main Menu button
+ctx.fillStyle = "gray";
+ctx.fillRect(mainMenuButton.x, mainMenuButton.y, mainMenuButton.width, mainMenuButton.height);
+
+ctx.fillStyle = "white";
+ctx.font = "26px Arial";
+ctx.fillText("Main Menu", mainMenuButton.x + mainMenuButton.width / 2, mainMenuButton.y + 33);
   ctx.textAlign = "start";
 
   requestAnimationFrame(gameLoop);
@@ -1308,60 +1342,121 @@ function handleCanvasClick(e) {
   const my = (clientY - rect.top) * scaleY;
 
   if (gameOver) {
-    if (
-      mx >= restartButton.x &&
-      mx <= restartButton.x + restartButton.width &&
-      my >= restartButton.y &&
-      my <= restartButton.y + restartButton.height
-    ) {
-      // התחלת המשחק מחדש
-      playerX = 100;
-      playerY = 500;
-      lives = 10;
-      cityDamage = 0;
-      score = 0;
-      interceptedMissiles = 0;
-      killedEnemies = 0;
-      bossHitCount = 0;
-      balisticMissiles = [];
-      explosions = [];
-      groundEnemies = [];
-      enemyBullets = [];
-      playerBullets = [];
-      ironDomeRockets = [];
-      ironDomeAmmo = 20;
-      hearts = [];
-      ammos = [];
-      b2BonusGiven = false;
-      b2Plane = null;
-      b2PlaneFlightCount = 0;
-      b2PlaneIsWaiting = false;
-      b2Missiles = [];
-      nextBonusHitCount = 10 + Math.floor(Math.random() * 6);
-      b2BonusFlashVisible = true;
-      b2BonusFlashLastTime = Date.now();
-      b2Bonuses = [];
+  const clickedRestart =
+    mx >= restartButton.x &&
+    mx <= restartButton.x + restartButton.width &&
+    my >= restartButton.y &&
+    my <= restartButton.y + restartButton.height;
 
-      lastBalisticTime = Date.now();
-      enemySpawnTimer = Date.now();
-      gameStartTime = Date.now();
+  const clickedMainMenu = (gameWon &&
+    mx >= mainMenuButton.x &&
+    mx <= mainMenuButton.x + mainMenuButton.width &&
+    my >= mainMenuButton.y &&
+    my <= mainMenuButton.y + mainMenuButton.height);
 
-      boss = null;
-      bossActive = false;
-      bossHealth = 30;
-      lastBossScore = -5000;
+  if (clickedRestart) {
+    // Restart: reset state and continue playing (start screen stays hidden)
+    playerX = 100;
+    playerY = 500;
+    lives = 10;
+    cityDamage = 0;
+    score = 0;
+    interceptedMissiles = 0;
+    killedEnemies = 0;
+    bossHitCount = 0;
+    balisticMissiles = [];
+    explosions = [];
+    groundEnemies = [];
+    enemyBullets = [];
+    playerBullets = [];
+    ironDomeRockets = [];
+    ironDomeAmmo = 20;
+    hearts = [];
+    ammos = [];
+    b2BonusGiven = false;
+    b2Plane = null;
+    b2PlaneFlightCount = 0;
+    b2PlaneIsWaiting = false;
+    b2Missiles = [];
+    nextBonusHitCount = 10 + Math.floor(Math.random() * 6);
+    b2BonusFlashVisible = true;
+    b2BonusFlashLastTime = Date.now();
+    b2Bonuses = [];
 
-      // ✅ חשוב: לאפשר שמירה מחדש של שיאים בכל משחק חדש
-      __scoreSubmitted = false;
-      __finalScore = null;
+    lastBalisticTime = Date.now();
+    enemySpawnTimer = Date.now();
+    gameStartTime = Date.now();
 
-      // (מומלץ) כדי למנוע מצב שהמשחק נשאר "ניצחון" או "עצור" מהסיבוב הקודם
-      gameWon = false;
-      paused = false;
+    boss = null;
+    bossActive = false;
+    bossHealth = 30;
+    lastBossScore = -5000;
 
-      gameOver = false;
-    }
+    // Allow score submission again for the new run
+    __scoreSubmitted = false;
+    __finalScore = null;
+
+    gameWon = false;
+    paused = false;
+    gameOver = false;
+    return;
   }
+
+  if (clickedMainMenu) {
+    // Back to main menu: reset state and show start screen
+    playerX = 100;
+    playerY = 500;
+    lives = 10;
+    cityDamage = 0;
+    score = 0;
+    interceptedMissiles = 0;
+    killedEnemies = 0;
+    bossHitCount = 0;
+    balisticMissiles = [];
+    explosions = [];
+    groundEnemies = [];
+    enemyBullets = [];
+    playerBullets = [];
+    ironDomeRockets = [];
+    ironDomeAmmo = 20;
+    hearts = [];
+    ammos = [];
+    b2Bonuses = [];
+    b2BonusGiven = false;
+    b2Plane = null;
+    b2PlaneFlightCount = 0;
+    b2PlaneIsWaiting = false;
+    b2Missiles = [];
+    nextBonusHitCount = 10 + Math.floor(Math.random() * 6);
+    b2BonusFlashVisible = true;
+    b2BonusFlashLastTime = Date.now();
+
+    lastBalisticTime = Date.now();
+    enemySpawnTimer = Date.now();
+    gameStartTime = Date.now();
+
+    boss = null;
+    bossActive = false;
+    bossHealth = 30;
+    lastBossScore = -5000;
+
+    __scoreSubmitted = false;
+    __finalScore = null;
+
+    isGameRunning = false;
+    paused = false;
+    gameWon = false;
+    gameOver = false;
+
+    // Hide mobile controls and show start screen again
+    const sc = document.getElementById("startScreen");
+    if (sc) sc.style.display = "flex";
+    const tc = document.getElementById("touchControls");
+    if (tc) tc.style.display = "none";
+    return;
+  }
+}
+
 }
 
 
