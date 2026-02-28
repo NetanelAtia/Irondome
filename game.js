@@ -62,10 +62,22 @@ const shootSound = new Audio("sound/shoot.wav");
 const enemyShootSound = new Audio("sound/shoot2.wav");
 
 let playerName = ""; // שם השחקן שמוזן בהתחלה
-let highScores = JSON.parse(localStorage.getItem("highScores") || "[]"); // טעינת שיאים מזיכרון הדפדפן
+let highScores = []; // High scores are loaded from Firebase (global leaderboard)
 const isIphone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 const isAndroid = /Android/i.test(navigator.userAgent);
 const isMobile = isIphone || isAndroid;
+
+// === Firebase: sync global high scores (TOP 10) ===
+if (window.database) {
+  window.database.ref("scores")
+    .limitToLast(200)
+    .on("value", (snapshot) => {
+      const arr = [];
+      snapshot.forEach((child) => arr.push(child.val()));
+      arr.sort((a, b) => (b.score || 0) - (a.score || 0));
+      highScores = arr.slice(0, 10);
+    });
+}
 
 
 let playerX = 100, playerY = 500, velocityY = 0, gravity = isIphone ? 0.35 : isAndroid ? 0.3 : 0.2, isJumping = false;
@@ -411,7 +423,7 @@ if (bossHealth <= 0) {
   highScores = highScores.slice(0, 10);
 
   // שמירת השיאים בזיכרון הדפדפן
-  localStorage.setItem("highScores", JSON.stringify(highScores));
+  if (window.submitScoreToCloud) window.submitScoreToCloud(playerName, score);
 
 
 
@@ -674,7 +686,7 @@ if (bossHealth <= 0) {
   highScores = highScores.slice(0, 10);
 
   // שמירה בזיכרון הדפדפן
-  localStorage.setItem("highScores", JSON.stringify(highScores));
+  if (window.submitScoreToCloud) window.submitScoreToCloud(playerName, score);
 
   scorePopups.push({
     text: "+1000",
@@ -767,7 +779,7 @@ if (
       highScores.push({ name: playerName, score });
       highScores.sort((a, b) => b.score - a.score);
       highScores = highScores.slice(0, 10);
-      localStorage.setItem("highScores", JSON.stringify(highScores));
+      if (window.submitScoreToCloud) window.submitScoreToCloud(playerName, score);
 
   
 
