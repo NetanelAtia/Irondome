@@ -103,22 +103,39 @@ function __syncHighScoresFromFirebase() {
 }
 
 function saveHighScore(name, score) {
+  const safeName = String(name || "Player").trim().slice(0, 20) || "Player";
   const s = Number(score || 0);
   if (!Number.isFinite(s) || s <= 0) return;
-  const entry = { name: String(name || "Player").slice(0, 20), score: Math.round(s), timestamp: Date.now() };
 
-  // Update local cache immediately (so UI that relies on localStorage still shows something)
-  highScores.push({ name: entry.name, score: entry.score });
-  highScores.sort((a, b) => (b.score || 0) - (a.score || 0));
-  highScores = highScores.slice(0, 10);
-  try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch(_) {}
+  // Always update local fallback too (useful if Firebase is blocked)
+  try {
+    const local = JSON.parse(localStorage.getItem("highScores") || "[]");
+    local.push({ name: safeName, score: Math.round(s), ts: Date.now() });
+    local.sort((a,b) => (Number(b.score)||0) - (Number(a.score)||0));
+    localStorage.setItem("highScores", JSON.stringify(local.slice(0, 50)));
+  } catch (_) {}
 
-  // Push to Firebase if available
-  if (window.database) {
-    window.database.ref(HS_PATH).push(entry).catch((err) => {
-      console.error("Failed to save score to Firebase:", err);
-    });
-  }
+  if (!window.database) return;
+
+  // Use a per-player record so newer higher scores overwrite the old one reliably
+  // Key: lowercase letters/numbers/_- (Firebase RTDB key-safe)
+  const key = safeName
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "_")
+    .slice(0, 32) || "player";
+
+  const ref = window.database.ref(`${HS_PATH}/${key}`);
+  const serverTs = (window.firebase && window.firebase.database && window.firebase.database.ServerValue)
+    ? window.firebase.database.ServerValue.TIMESTAMP
+    : Date.now();
+
+  ref.transaction((current) => {
+    const curScore = current && Number(current.score);
+    if (!Number.isFinite(curScore) || Math.round(s) > curScore) {
+      return { name: safeName, score: Math.round(s), ts: serverTs };
+    }
+    return; // abort - keep current
+  }).catch((err) => console.error("Failed to save high score:", err));
 }
 
 // Start syncing as soon as possible

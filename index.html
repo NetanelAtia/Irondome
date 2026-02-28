@@ -318,7 +318,7 @@ canvas {
     firebase.initializeApp(firebaseConfig);
     // Expose globally for game.js
     window.database = firebase.database();
-    window.HS_PATH = "highScores";
+    window.HS_PATH = "leaderboard";
   </script>
   <script src="game.js"></script>
 <script>
@@ -352,7 +352,8 @@ canvas {
 
     // If Firebase is connected, listen live
     if (window.database) {
-      window.database.ref(window.HS_PATH || "highScores")
+      window.database.ref(window.HS_PATH || "leaderboard")
+        .orderByChild("score")
         .limitToLast(10)
         .on("value", (snapshot) => {
           const list = [];
