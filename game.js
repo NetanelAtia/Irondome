@@ -182,6 +182,77 @@ let restartButton = {
   height: 50
 };
 
+let homeButton = {
+  x: canvas.width / 2 - 100,
+  y: canvas.height * 0.7,
+  width: 200,
+  height: 50
+};
+
+// ✅ Reset helpers (restart / main menu)
+function __resetGameStateCore() {
+  playerX = 100;
+  playerY = 500;
+  lives = 10;
+  cityDamage = 0;
+  score = 0;
+  interceptedMissiles = 0;
+  killedEnemies = 0;
+  bossHitCount = 0;
+
+  balisticMissiles = [];
+  explosions = [];
+  groundEnemies = [];
+  enemyBullets = [];
+  playerBullets = [];
+  ironDomeRockets = [];
+  ironDomeAmmo = 20;
+  hearts = [];
+  ammos = [];
+
+  b2BonusGiven = false;
+  b2Plane = null;
+  b2PlaneFlightCount = 0;
+  b2PlaneIsWaiting = false;
+  b2Missiles = [];
+  nextBonusHitCount = 10 + Math.floor(Math.random() * 6); // 10 עד 15
+  b2BonusFlashVisible = true;
+  b2BonusFlashLastTime = Date.now();
+  b2Bonuses = [];
+
+  lastBalisticTime = Date.now();
+  enemySpawnTimer = Date.now();
+  gameStartTime = Date.now();
+
+  boss = null;
+  bossActive = false;
+  bossHealth = 30;
+  lastBossScore = -5000;
+
+  bossExplosionTime = null;
+  bossIsDying = false;
+
+  gameWon = false;
+  gameOver = false;
+
+  // ✅ allow score saving again for the next round
+  __scoreSubmitted = false;
+  __finalScore = null;
+}
+
+function __goToMainMenu() {
+  __resetGameStateCore();
+  isGameRunning = false;
+
+  // Hide touch buttons (mobile) when returning to menu
+  const tc = document.getElementById("touchControls");
+  if (tc) tc.style.display = "none";
+
+  const ss = document.getElementById("startScreen");
+  if (ss) ss.style.display = "flex";
+}
+
+
 
 
 function getRandomBombInterval() {
@@ -310,16 +381,41 @@ ctx.fillText("🏆 High Scores:", canvas.width / 2, startY + 210);
 
 
 
-  // כפתור ריסטארט
-restartButton.y = startY + 240 + highScores.length * 25 + 40;
-  restartButton.x = canvas.width / 2 - restartButton.width / 2;
+  // ✅ End-screen buttons (Restart + Main Menu) — side by side
+  const btnW = 180;
+  const btnH = 44;
+  const gap = 18;
 
-  ctx.fillStyle = "gray";
-  ctx.fillRect(restartButton.x, restartButton.y, restartButton.width, restartButton.height);
+  const buttonsY = startY + 240 + highScores.length * 25 + 40;
 
+  restartButton.width = btnW;
+  restartButton.height = btnH;
+  homeButton.width = btnW;
+  homeButton.height = btnH;
+
+  restartButton.y = buttonsY;
+  homeButton.y = buttonsY;
+
+  // Right: Restart | Left: Main Menu
+  const totalW = btnW * 2 + gap;
+  const leftX = canvas.width / 2 - totalW / 2;
+
+  homeButton.x = leftX;
+  restartButton.x = leftX + btnW + gap;
+
+  // Draw Home
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  ctx.fillRect(homeButton.x, homeButton.y, homeButton.width, homeButton.height);
   ctx.fillStyle = "white";
-  ctx.font = "28px Arial";
-  ctx.fillText("Restart", restartButton.x + restartButton.width / 2, restartButton.y + 33);
+  ctx.font = "22px Arial";
+  ctx.fillText("Main Menu", homeButton.x + homeButton.width / 2, homeButton.y + 30);
+
+  // Draw Restart
+  ctx.fillStyle = "rgba(255,165,0,0.85)";
+  ctx.fillRect(restartButton.x, restartButton.y, restartButton.width, restartButton.height);
+  ctx.fillStyle = "black";
+  ctx.font = "22px Arial";
+  ctx.fillText("Restart", restartButton.x + restartButton.width / 2, restartButton.y + 30);
 
   ctx.textAlign = "start";
 
@@ -337,13 +433,40 @@ restartButton.y = startY + 240 + highScores.length * 25 + 40;
   ctx.font = "60px Arial";
   ctx.fillText("GAME OVER", canvas.width / 2 - 180, canvas.height / 2 - 30);
 
-  // כפתור Restart
-  ctx.fillStyle = "gray";
-  ctx.fillRect(restartButton.x, restartButton.y, restartButton.width, restartButton.height);
+  // ✅ End-screen buttons (Restart + Main Menu) — side by side
+  ctx.textAlign = "center";
+  const btnW = 180;
+  const btnH = 44;
+  const gap = 18;
 
+  restartButton.width = btnW;
+  restartButton.height = btnH;
+  homeButton.width = btnW;
+  homeButton.height = btnH;
+
+  restartButton.y = canvas.height * 0.68;
+  homeButton.y = restartButton.y;
+
+  // Right: Restart | Left: Main Menu
+  const totalW = btnW * 2 + gap;
+  const leftX = canvas.width / 2 - totalW / 2;
+
+  homeButton.x = leftX;
+  restartButton.x = leftX + btnW + gap;
+
+  // Draw Home
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  ctx.fillRect(homeButton.x, homeButton.y, homeButton.width, homeButton.height);
   ctx.fillStyle = "white";
-  ctx.font = "28px Arial";
-  ctx.fillText("Restart", restartButton.x + 50, restartButton.y + 35);
+  ctx.font = "22px Arial";
+  ctx.fillText("Main Menu", homeButton.x + homeButton.width / 2, homeButton.y + 30);
+
+  // Draw Restart
+  ctx.fillStyle = "rgba(255,165,0,0.85)";
+  ctx.fillRect(restartButton.x, restartButton.y, restartButton.width, restartButton.height);
+  ctx.fillStyle = "black";
+  ctx.font = "22px Arial";
+  ctx.fillText("Restart", restartButton.x + restartButton.width / 2, restartButton.y + 30);
 
   requestAnimationFrame(gameLoop);
   return;
@@ -723,14 +846,7 @@ if (bossHealth <= 0) {
   bossActive = false;
   bossIsDying = true;
   bossExplosionTime = Date.now();
-
-  // הוספת השם והניקוד לרשימת השיאים
-  highScores.push({ name: playerName, score: score });
-
-  // מיון מהגבוה לנמוך, שמירה של עד 10 שיאים
-  highScores.sort((a, b) => b.score - a.score);
-  highScores = highScores.slice(0, 10);
-  scorePopups.push({
+scorePopups.push({
     text: "+1000",
     x: boss.x,
     y: boss.y,
@@ -1296,56 +1412,35 @@ function handleCanvasClick(e) {
   const mx = (clientX - rect.left) * scaleX;
   const my = (clientY - rect.top) * scaleY;
 
+  function __hit(btn) {
+    return (
+      mx >= btn.x &&
+      mx <= btn.x + btn.width &&
+      my >= btn.y &&
+      my <= btn.y + btn.height
+    );
+  }
+
+  // End screens (GAME OVER / YOU WIN)
   if (gameOver) {
-    if (
-      mx >= restartButton.x &&
-      mx <= restartButton.x + restartButton.width &&
-      my >= restartButton.y &&
-      my <= restartButton.y + restartButton.height
-    ) {
-      // התחלת המשחק מחדש
-      playerX = 100;
-      playerY = 500;
-      lives = 10;
-      cityDamage = 0;
-      score = 0;
-      interceptedMissiles = 0;
-      killedEnemies = 0;
-      bossHitCount = 0;
-      balisticMissiles = [];
-      explosions = [];
-      groundEnemies = [];
-      enemyBullets = [];
-      playerBullets = [];
-      ironDomeRockets = [];
-      ironDomeAmmo = 20;
-      hearts = [];
-      ammos = [];
-      b2BonusGiven = false;
-      b2Plane = null;
-      b2PlaneFlightCount = 0;
-      b2PlaneIsWaiting = false;
-      b2Missiles = [];
-      nextBonusHitCount = 10 + Math.floor(Math.random() * 6); // 10 עד 15
-      b2BonusFlashVisible = true;
-      b2BonusFlashLastTime = Date.now();
-      b2Bonuses = [];
+    if (__hit(restartButton)) {
+      // Restart immediately (stay in game)
+      __resetGameStateCore();
+      isGameRunning = true;
 
-      lastBalisticTime = Date.now();
-      enemySpawnTimer = Date.now();
-      gameStartTime = Date.now();
+      // Keep menu hidden
+      const ss = document.getElementById("startScreen");
+      if (ss) ss.style.display = "none";
+      return;
+    }
 
-      boss = null;
-      bossActive = false;
-      bossHealth = 30;
-      lastBossScore = -5000;
-
-      gameOver = false;
+    if (__hit(homeButton)) {
+      // Return to main menu
+      __goToMainMenu();
+      return;
     }
   }
 }
-
-
 // תמיכה גם בעכבר וגם בטאץ'
 canvas.addEventListener("click", handleCanvasClick);
 canvas.addEventListener("touchstart", handleCanvasClick, { passive: false });
@@ -1355,6 +1450,10 @@ canvas.addEventListener("touchstart", handleCanvasClick, { passive: false });
 
 function startGame() {
   isGameRunning = true;
+
+  // ✅ ensure score can be saved in this run
+  __scoreSubmitted = false;
+  __finalScore = null;
 
   const input = document.getElementById("playerNameInput");
   const name = input.value.trim();
