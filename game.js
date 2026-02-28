@@ -1281,15 +1281,14 @@ document.addEventListener("keyup", (e) => {
 
 
 function handleCanvasClick(e) {
-  e.preventDefault(); // חשוב מאוד
+  e.preventDefault();
 
-  const rect = canvas.getBoundingClientRect(); // מיקום פיזי של הקנבס
+  const rect = canvas.getBoundingClientRect();
 
   const isTouch = e.type === "touchstart";
   const clientX = isTouch ? e.touches[0].clientX : e.clientX;
   const clientY = isTouch ? e.touches[0].clientY : e.clientY;
 
-  // המרה לקואורדינטות של הקנבס לפי מתיחה
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
 
@@ -1326,7 +1325,7 @@ function handleCanvasClick(e) {
       b2PlaneFlightCount = 0;
       b2PlaneIsWaiting = false;
       b2Missiles = [];
-      nextBonusHitCount = 10 + Math.floor(Math.random() * 6); // 10 עד 15
+      nextBonusHitCount = 10 + Math.floor(Math.random() * 6);
       b2BonusFlashVisible = true;
       b2BonusFlashLastTime = Date.now();
       b2Bonuses = [];
@@ -1339,6 +1338,14 @@ function handleCanvasClick(e) {
       bossActive = false;
       bossHealth = 30;
       lastBossScore = -5000;
+
+      // ✅ חשוב: לאפשר שמירה מחדש של שיאים בכל משחק חדש
+      __scoreSubmitted = false;
+      __finalScore = null;
+
+      // (מומלץ) כדי למנוע מצב שהמשחק נשאר "ניצחון" או "עצור" מהסיבוב הקודם
+      gameWon = false;
+      paused = false;
 
       gameOver = false;
     }
