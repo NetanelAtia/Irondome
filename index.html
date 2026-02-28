@@ -300,27 +300,61 @@ canvas {
     </div>
   </div>
 
+  
   <!-- Firebase (Realtime Database) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script>
-    // Firebase config (Realtime Database)
+    // Firebase config (public client config)
     const firebaseConfig = {
-      apiKey: "AIzaSyC1Tg2Q-1UpWzE1s-jG-ebTrK4GrZaN8cY",
-      authDomain: "iron-dome-game-65886.firebaseapp.com",
-      databaseURL: "https://iron-dome-game-65886-default-rtdb.firebaseio.com",
-      projectId: "iron-dome-game-65886",
-      storageBucket: "iron-dome-game-65886.firebasestorage.app",
-      messagingSenderId: "165260440699",
-      appId: "1:165260440699:web:bcd29ea757dc3819e71ede"
-    };
-
+      "apiKey": "AIzaSyC1Tg2Q-1UpWzE1s-jG-ebTrK4GrZaN8cY",
+      "authDomain": "iron-dome-game-65886.firebaseapp.com",
+      "databaseURL": "https://iron-dome-game-65886-default-rtdb.firebaseio.com",
+      "projectId": "iron-dome-game-65886",
+      "storageBucket": "iron-dome-game-65886.firebasestorage.app",
+      "messagingSenderId": "165260440699",
+      "appId": "1:165260440699:web:bcd29ea757dc3819e71ede"
+};
     firebase.initializeApp(firebaseConfig);
     // Expose globally for game.js
     window.database = firebase.database();
+    window.HS_PATH = "highScores";
   </script>
-
   <script src="game.js"></script>
+
+<script>
+  // Render High Scores (global via Firebase). Fallback to localStorage if Firebase not available.
+  window.addEventListener("DOMContentLoaded", () => {
+    const scoresList = document.getElementById("scoresList");
+
+    function render(list) {
+      scoresList.innerHTML = "";
+      (list || []).forEach((entry, index) => {
+        const li = document.createElement("li");
+        li.textContent = `${index + 1}. ${entry.name} - ${entry.score}`;
+        scoresList.appendChild(li);
+      });
+    }
+
+    // If Firebase is connected, listen live
+    if (window.database) {
+      window.database.ref(window.HS_PATH || "highScores")
+        .limitToLast(10)
+        .on("value", (snapshot) => {
+          const list = [];
+          snapshot.forEach((child) => list.push(child.val()));
+          list.sort((a, b) => (b.score || 0) - (a.score || 0));
+          render(list.slice(0, 10));
+        });
+    } else {
+      // Fallback
+      const scores = JSON.parse(localStorage.getItem("highScores") || "[]");
+      scores.sort((a, b) => (b.score || 0) - (a.score || 0));
+      render(scores.slice(0, 10));
+    }
+  });
+</script>
+
 
 <script>
   window.addEventListener("DOMContentLoaded", () => {
@@ -336,6 +370,26 @@ canvas {
     }
   });
 </script>
+
+
+<script>
+  document.getElementById("resetScoresBtn").addEventListener("click", () => {
+    if (!confirm("האם אתה בטוח שברצונך לאפס את טבלת השיאים?")) return;
+
+    const scoresList = document.getElementById("scoresList");
+    scoresList.innerHTML = "";
+
+    // Prefer Firebase (global reset for everyone)
+    if (window.database) {
+      window.database.ref(window.HS_PATH || "highScores").remove()
+        .catch((err) => console.error("Failed to reset scores:", err));
+    } else {
+      // Fallback local reset
+      localStorage.removeItem("highScores");
+    }
+  });
+</script>
+
 
 
 <script>

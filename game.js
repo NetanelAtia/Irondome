@@ -62,114 +62,63 @@ const shootSound = new Audio("sound/shoot.wav");
 const enemyShootSound = new Audio("sound/shoot2.wav");
 
 let playerName = ""; // שם השחקן שמוזן בהתחלה
-let highScores = []; // High Scores are synced from Firebase (fallback to localStorage if Firebase is unavailable)
-// === High Scores (Firebase Realtime Database) ===
-function __renderHighScoresToUI() {
-  const ul = document.getElementById("scoresList");
-  if (!ul) return;
-  ul.innerHTML = "";
-  (highScores || []).slice(0, 10).forEach((entry, index) => {
-    const li = document.createElement("li");
-    li.textContent = `${index + 1}. ${entry.name} - ${entry.score}`;
-    ul.appendChild(li);
-  });
-}
 
-function __syncHighScoresFromFirebase() {
-  try {
-    if (window.database && window.database.ref) {
-      window.database
-        .ref("highScores")
-        .limitToLast(50)
-        .on("value", (snapshot) => {
-          const arr = [];
-          snapshot.forEach((child) => {
-            const v = child.val() || {};
-            if (typeof v.name === "string" && Number.isFinite(Number(v.score))) {
-              arr.push({ name: v.name, score: Number(v.score), timestamp: Number(v.timestamp) || 0 });
-            }
-          });
-          arr.sort((a, b) => b.score - a.score || b.timestamp - a.timestamp);
-          highScores = arr.slice(0, 10);
-          __renderHighScoresToUI();
-        });
-      return true;
-    }
-  } catch (e) {
-    console.warn("Firebase sync failed:", e);
-  }
-  return false;
-}
+// ===== High Scores (Firebase Realtime DB with local fallback) =====
+const HS_PATH = (window.HS_PATH || "highScores");
 
 function __loadHighScoresFallback() {
   try {
-    const stored = JSON.parse(localStorage.getItem("highScores") || "[]");
-    if (Array.isArray(stored)) {
-      highScores = stored
-        .filter(x => x && typeof x.name === "string" && Number.isFinite(Number(x.score)))
-        .map(x => ({ name: x.name, score: Number(x.score) }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 10);
-    }
-  } catch {}
-  __renderHighScoresToUI();
-}
-
-function submitHighScore(name, score) {
-  const cleanName = String(name || "").trim().slice(0, 24);
-  const cleanScore = Number(score) || 0;
-  if (!cleanName) return;
-
-  // Prefer Firebase
-  try {
-    if (window.database && window.database.ref) {
-      window.database.ref("highScores").push({
-        name: cleanName,
-        score: cleanScore,
-        timestamp: Date.now()
-      });
-      return;
+    const scores = JSON.parse(localStorage.getItem("highScores") || "[]");
+    if (Array.isArray(scores)) {
+      highScores = scores;
+      highScores.sort((a, b) => (b.score || 0) - (a.score || 0));
+      highScores = highScores.slice(0, 10);
     }
   } catch (e) {
-    console.warn("Firebase write failed:", e);
+    highScores = [];
   }
-
-  // Fallback local
-  highScores = (highScores || []);
-  highScores.push({ name: cleanName, score: cleanScore });
-  highScores.sort((a, b) => b.score - a.score);
-  highScores = highScores.slice(0, 10);
-  try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch {}
-  __renderHighScoresToUI();
 }
 
-// init on load
-window.addEventListener("DOMContentLoaded", () => {
-  const ok = __syncHighScoresFromFirebase();
-  if (!ok) __loadHighScoresFallback();
+function __syncHighScoresFromFirebase() {
+  if (!window.database) {
+    __loadHighScoresFallback();
+    return;
+  }
+  window.database.ref(HS_PATH).limitToLast(10).on("value", (snapshot) => {
+    const list = [];
+    snapshot.forEach((child) => list.push(child.val()));
+    list.sort((a, b) => (b.score || 0) - (a.score || 0));
+    highScores = list.slice(0, 10);
+    // keep local cache as backup
+    try { saveHighScore(playerName, score); // saves to Firebase (or local fallback) } catch(_) {}
+  }, (err) => {
+    console.error("HighScores listener error:", err);
+    __loadHighScoresFallback();
+  });
+}
 
-  const resetBtn = document.getElementById("resetScoresBtn");
-  if (resetBtn) {
-    resetBtn.addEventListener("click", () => {
-      if (!confirm("האם אתה בטוח שברצונך לאפס את טבלת השיאים?")) return;
+function saveHighScore(name, score) {
+  const entry = { name: String(name || "Player").slice(0, 20), score: Number(score || 0), timestamp: Date.now() };
 
-      // Prefer Firebase (global reset)
-      try {
-        if (window.database && window.database.ref) {
-          window.database.ref("highScores").remove();
-          return;
-        }
-      } catch (e) {
-        console.warn("Firebase reset failed:", e);
-      }
+  // Update local cache immediately (so UI that relies on localStorage still shows something)
+  highScores.push({ name: entry.name, score: entry.score });
+  highScores.sort((a, b) => (b.score || 0) - (a.score || 0));
+  highScores = highScores.slice(0, 10);
+  try { localStorage.setItem("highScores", JSON.stringify(highScores)); } catch(_) {}
 
-      // Fallback local
-      try { localStorage.removeItem("highScores"); } catch {}
-      highScores = [];
-      __renderHighScoresToUI();
+  // Push to Firebase if available
+  if (window.database) {
+    window.database.ref(HS_PATH).push(entry).catch((err) => {
+      console.error("Failed to save score to Firebase:", err);
     });
   }
-});
+}
+
+// Start syncing as soon as possible
+setTimeout(__syncHighScoresFromFirebase, 0);
+// ================================================================
+
+let highScores = []; // will be synced from Firebase (if available) or localStorage fallback
 const isIphone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 const isAndroid = /Android/i.test(navigator.userAgent);
 const isMobile = isIphone || isAndroid;
@@ -219,7 +168,8 @@ let enemyBullets = [], enemyBulletSpeed = 4;
 let enemyFrameCounter = 0;
 let flagAnimCounter = 0;
 let gameOver = false;
-window.gameWon = window.gameWon ?? false; // global-safe (prevents redeclare if script loaded twice)
+let gameWon = false;
+
 let restartButton = {
   x: canvas.width / 2 - 100,
   y: canvas.height * 0.7,
@@ -300,7 +250,7 @@ const nearPC = Math.abs(playerX - pcX) < 150;
 ctx.drawImage(ironDomeImg, ironDomeX, ironDomeY, 140, 160);
 
 if (gameOver) {
-  if (window.gameWon) {
+  if (gameWon) {
     const timeSinceBossExplosion = Date.now() - bossExplosionTime;
 
     if (timeSinceBossExplosion < 1000) {
@@ -510,14 +460,7 @@ if (bossHealth <= 0) {
   bossExplosionTime = Date.now();
 
   // הוספת השם והניקוד לרשימת השיאים
-  submitHighScore(playerName, score);
-
-  // מיון השיאים מהגבוה לנמוך ושמירה של 10 שיאים בלבד
-  highScores.sort((a, b) => b.score - a.score);
-  highScores = highScores.slice(0, 10);
-
-  // שמירת השיאים בזיכרון הדפדפן
-  // high scores saved via submitHighScore() (Firebase)
+  saveHighScore(playerName, score);
 scorePopups.push({
   text: "+1000",
   x: boss.x,
@@ -768,14 +711,15 @@ if (bossHealth <= 0) {
   bossExplosionTime = Date.now();
 
   // הוספת השם והניקוד לרשימת השיאים
-  submitHighScore(playerName, score);
+  highScores.push({ name: playerName, score: score });
 
   // מיון מהגבוה לנמוך, שמירה של עד 10 שיאים
   highScores.sort((a, b) => b.score - a.score);
   highScores = highScores.slice(0, 10);
 
   // שמירה בזיכרון הדפדפן
-  // high scores saved via submitHighScore() (Firebase)
+  localStorage.setItem("highScores", JSON.stringify(highScores));
+
   scorePopups.push({
     text: "+1000",
     x: boss.x,
@@ -864,10 +808,13 @@ if (
 
       score += 1000;
 
-      submitHighScore(playerName, score);
+      highScores.push({ name: playerName, score });
       highScores.sort((a, b) => b.score - a.score);
       highScores = highScores.slice(0, 10);
-  // high scores saved via submitHighScore() (Firebase)
+      localStorage.setItem("highScores", JSON.stringify(highScores));
+
+  
+
       scorePopups.push({
         text: "+1000",
         x: boss.x,
@@ -1041,7 +988,7 @@ if (bossIsDying && boss) {
 
   if (timeSinceExplosion >= 1000) {
     bossIsDying = false;
-    window.gameWon = true;
+    gameWon = true;
     gameOver = true;
   }
 }
@@ -1443,7 +1390,7 @@ playerName = formattedName;
     if (container.requestFullscreen) {
       container.requestFullscreen().catch(() => {});
     } else if (container.webkitRequestFullscreen) {
-      try { container.webkitRequestFullscreen(); } catch (e) {}
+      container.webkitRequestFullscreen();
     }
 
     // בקשת סיבוב למסך לרוחב (אם אפשר)
@@ -1570,3 +1517,4 @@ inputField.addEventListener("input", () => {
   ).join(" ");
   inputField.value = capitalized;
 });
+
