@@ -255,16 +255,11 @@ const nearPC = Math.abs(playerX - pcX) < 150;
 ctx.drawImage(ironDomeImg, ironDomeX, ironDomeY, 140, 160);
 
 if (gameOver) {
-  // Lock final score the moment the game ends so UI + DB always match
+  // Submit high score once (works for BOTH win & lose)
   if (!__scoreSubmitted) {
     __scoreSubmitted = true;
     __finalScore = Math.round(Number(score || 0));
-    // Freeze the score used everywhere after game end
-    score = __finalScore;
     try { saveHighScore(playerName, __finalScore); } catch (e) { console.error("saveHighScore failed:", e); }
-  } else if (typeof __finalScore === "number") {
-    // Keep score stable on subsequent frames
-    score = __finalScore;
   }
 
   if (gameWon) {
@@ -1341,6 +1336,10 @@ function handleCanvasClick(e) {
       lastBossScore = -5000;
 
       gameOver = false;
+          // Reset score-submit guard for the restarted run
+      __scoreSubmitted = false;
+      __finalScore = null;
+      gameWon = false;
     }
   }
 }
@@ -1356,6 +1355,11 @@ canvas.addEventListener("touchstart", handleCanvasClick, { passive: false });
 function startGame() {
   isGameRunning = true;
 
+
+  // Reset score-submit guard for a new run
+  __scoreSubmitted = false;
+  __finalScore = null;
+  gameWon = false;
   const input = document.getElementById("playerNameInput");
   const name = input.value.trim();
 

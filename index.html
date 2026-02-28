@@ -305,42 +305,22 @@ canvas {
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script>
-    // Firebase init (guarded so it won't crash even if scripts are evaluated twice)
-    (function () {
-      if (window.__IRON_DOME_FB_INIT__) return;
-      window.__IRON_DOME_FB_INIT__ = true;
-
-      const cfg = {
-  "apiKey": "AIzaSyC1Tg2Q-1UpWzE1s-jG-ebTrK4GrZaN8cY",
-  "authDomain": "iron-dome-game-65886.firebaseapp.com",
-  "databaseURL": "https://iron-dome-game-65886-default-rtdb.firebaseio.com",
-  "projectId": "iron-dome-game-65886",
-  "storageBucket": "iron-dome-game-65886.firebasestorage.app",
-  "messagingSenderId": "165260440699",
-  "appId": "1:165260440699:web:bcd29ea757dc3819e71ede"
+    // Firebase config (public client config)
+    const firebaseConfig = {
+      "apiKey": "AIzaSyC1Tg2Q-1UpWzE1s-jG-ebTrK4GrZaN8cY",
+      "authDomain": "iron-dome-game-65886.firebaseapp.com",
+      "databaseURL": "https://iron-dome-game-65886-default-rtdb.firebaseio.com",
+      "projectId": "iron-dome-game-65886",
+      "storageBucket": "iron-dome-game-65886.firebasestorage.app",
+      "messagingSenderId": "165260440699",
+      "appId": "1:165260440699:web:bcd29ea757dc3819e71ede"
 };
-
-      try {
-        // Avoid "already exists" / redeclare issues
-        if (!firebase.apps || !firebase.apps.length) {
-          firebase.initializeApp(cfg);
-        }
-      } catch (e) {
-        // If an app already exists, ignore; otherwise log
-        console.warn("Firebase init warning:", e);
-      }
-
-      // Expose globally for game.js
-      try {
-        window.database = firebase.database();
-        window.HS_PATH = "highScores";
-      } catch (e) {
-        console.error("Firebase database init failed:", e);
-      }
-    })();
+    firebase.initializeApp(firebaseConfig);
+    // Expose globally for game.js
+    window.database = firebase.database();
+    window.HS_PATH = "highScores";
   </script>
-
-<script src="game.js"></script>
+  <script src="game.js"></script>
 <script>
   // Mobile friendly START button (click + touch)
   (function () {
